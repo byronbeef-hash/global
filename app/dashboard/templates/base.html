@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{page_title}} — Cattle Scraper</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f0f23;
+            color: #e0e0e0;
+            line-height: 1.6;
+        }
+        nav {
+            background: #1a1a2e;
+            border-bottom: 1px solid #333;
+            padding: 0 2rem;
+            display: flex;
+            align-items: center;
+            gap: 0;
+        }
+        nav .brand {
+            font-weight: 700;
+            font-size: 1.1rem;
+            color: #e94560;
+            padding: 1rem 1.5rem 1rem 0;
+            border-right: 1px solid #333;
+            margin-right: .5rem;
+            text-decoration: none;
+        }
+        nav a {
+            color: #aaa;
+            text-decoration: none;
+            padding: 1rem 1rem;
+            transition: color .2s;
+            font-size: .9rem;
+        }
+        nav a:hover, nav a.active { color: #e94560; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+        h1 { font-size: 1.6rem; margin-bottom: 1.5rem; color: #fff; }
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .card {
+            background: #16213e;
+            border-radius: 10px;
+            padding: 1.5rem;
+            border: 1px solid #1f3460;
+        }
+        .card .label { font-size: .8rem; color: #888; text-transform: uppercase; letter-spacing: .5px; }
+        .card .value { font-size: 2rem; font-weight: 700; color: #e94560; margin-top: .3rem; }
+        .card .value.green { color: #4ecca3; }
+        .card .value.blue { color: #5dade2; }
+        .card .value.orange { color: #f39c12; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #16213e;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        th { background: #1a1a2e; color: #888; font-size: .8rem; text-transform: uppercase;
+             letter-spacing: .5px; padding: .8rem 1rem; text-align: left; }
+        td { padding: .7rem 1rem; border-top: 1px solid #1f3460; font-size: .9rem; }
+        tr:hover { background: #1f3460; }
+        a { color: #5dade2; }
+        .btn {
+            display: inline-block; padding: .6rem 1.2rem; background: #e94560;
+            color: white; border: none; border-radius: 6px; cursor: pointer;
+            font-size: .9rem; text-decoration: none;
+        }
+        .btn:hover { background: #c73a52; }
+        .btn-outline {
+            background: transparent; border: 1px solid #e94560; color: #e94560;
+        }
+        .btn-outline:hover { background: #e94560; color: white; }
+        .status-queued { color: #f39c12; }
+        .status-running { color: #5dade2; }
+        .status-completed { color: #4ecca3; }
+        .status-failed { color: #e94560; }
+        select, input[type="text"] {
+            padding: .5rem .8rem; background: #0f3460; border: 1px solid #333;
+            border-radius: 6px; color: #eee; font-size: .9rem;
+        }
+        .mt-1 { margin-top: 1rem; }
+        .mt-2 { margin-top: 2rem; }
+        .mb-1 { margin-bottom: 1rem; }
+    </style>
+    {{extra_head}}
+</head>
+<body>
+    <nav>
+        <a href="/" class="brand">Cattle Scraper</a>
+        <a href="/">Dashboard</a>
+        <a href="/recent">Recent</a>
+        <a href="/export">Export</a>
+        <a href="/jobs">Jobs</a>
+        <a href="/stats">Stats</a>
+    </nav>
+    <div class="container">
+        {{content}}
+    </div>
+</body>
+</html>

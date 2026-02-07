@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recent Contacts — Cattle Scraper</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f0f23; color: #e0e0e0; line-height: 1.6; }
+        nav { background: #1a1a2e; border-bottom: 1px solid #333; padding: 0 2rem; display: flex; align-items: center; }
+        nav .brand { font-weight: 700; font-size: 1.1rem; color: #e94560; padding: 1rem 1.5rem 1rem 0; border-right: 1px solid #333; margin-right: .5rem; text-decoration: none; }
+        nav a { color: #aaa; text-decoration: none; padding: 1rem; font-size: .9rem; }
+        nav a:hover { color: #e94560; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 2rem; }
+        h1 { font-size: 1.6rem; margin-bottom: 1.5rem; color: #fff; }
+        table { width: 100%; border-collapse: collapse; background: #16213e; border-radius: 10px; overflow: hidden; }
+        th { background: #1a1a2e; color: #888; font-size: .8rem; text-transform: uppercase; letter-spacing: .5px; padding: .8rem 1rem; text-align: left; position: sticky; top: 0; }
+        td { padding: .6rem 1rem; border-top: 1px solid #1f3460; font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px; }
+        tr:hover { background: #1f3460; }
+        a { color: #5dade2; }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="/" class="brand">Cattle Scraper</a>
+        <a href="/">Dashboard</a>
+        <a href="/recent">Recent</a>
+        <a href="/export">Export</a>
+        <a href="/jobs">Jobs</a>
+        <a href="/stats">Stats</a>
+    </nav>
+    <div class="container">
+        <h1>Recent Contacts (Last 100)</h1>
+        <div style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Email</th>
+                        <th>Farm Name</th>
+                        <th>State</th>
+                        <th>Type</th>
+                        <th>Breed</th>
+                        <th>Source</th>
+                        <th>Added</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{contact_rows}}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <script>
+        setTimeout(() => location.reload(), 30000);
+    </script>
+</body>
+</html>

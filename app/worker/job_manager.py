@@ -1,0 +1,71 @@
+"""Job creation and lifecycle management."""
+
+import logging
+
+from app.db import queries as db
+from app.config import TOP_CATTLE_STATES, US_STATES
+
+logger = logging.getLogger(__name__)
+
+
+class JobManager:
+    """Creates and manages scrape jobs."""
+
+    def create_job(
+        self,
+        job_type: str = "full",
+        states: list[str] | None = None,
+        total_queries: int = 0,
+    ) -> int:
+        """Create a new scrape job and return its ID."""
+        target_states = states or TOP_CATTLE_STATES
+        job_id = db.create_job(
+            job_type=job_type,
+            states=target_states,
+            total_queries=total_queries,
+        )
+        logger.info(
+            f"Created job {job_id}: type={job_type}, "
+            f"states={len(target_states)}, queries={total_queries}"
+        )
+        return job_id
+
+    def start_job(self, job_id: int) -> None:
+        """Mark a job as running."""
+        db.start_job(job_id)
+        logger.info(f"Job {job_id} started")
+
+    def update_progress(
+        self,
+        job_id: int,
+        query_index: int | None = None,
+        urls_discovered: int | None = None,
+        urls_processed: int | None = None,
+        emails_found: int | None = None,
+    ) -> None:
+        """Update job progress counters."""
+        db.update_job_progress(
+            job_id,
+            query_index=query_index,
+            urls_discovered=urls_discovered,
+            urls_processed=urls_processed,
+            emails_found=emails_found,
+        )
+
+    def complete_job(self, job_id: int, error: str = "") -> None:
+        """Mark a job as completed or failed."""
+        db.complete_job(job_id, error=error)
+        status = "failed" if error else "completed"
+        logger.info(f"Job {job_id} {status}" + (f": {error}" if error else ""))
+
+    def get_next_job(self) -> dict | None:
+        """Get the next queued job to process."""
+        return db.get_next_queued_job()
+
+    def get_active_jobs(self) -> list[dict]:
+        """Get all running/queued jobs."""
+        return db.get_active_jobs()
+
+    def get_all_jobs(self, limit: int = 50) -> list[dict]:
+        """Get all jobs."""
+        return db.get_all_jobs(limit)
