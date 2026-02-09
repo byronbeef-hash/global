@@ -541,7 +541,8 @@ def get_performance_metrics() -> dict:
         "last_24hr": now - timedelta(hours=24),
     }
 
-    counts = {}
+    # Email counts per time window
+    email_counts = {}
     for key, since in windows.items():
         try:
             result = (
@@ -550,14 +551,57 @@ def get_performance_metrics() -> dict:
                 .gte("created_at", since.isoformat())
                 .execute()
             )
-            counts[key] = result.count or 0
+            email_counts[key] = result.count or 0
         except Exception as e:
             logger.error(f"Performance metric {key} failed: {e}")
-            counts[key] = 0
+            email_counts[key] = 0
+
+    # URL counts per time window
+    url_counts = {}
+    for key, since in windows.items():
+        try:
+            result = (
+                client.table("urls")
+                .select("id", count="exact")
+                .gte("created_at", since.isoformat())
+                .execute()
+            )
+            url_counts[f"urls_{key}"] = result.count or 0
+        except Exception as e:
+            logger.error(f"URL metric {key} failed: {e}")
+            url_counts[f"urls_{key}"] = 0
+
+    # Total counts
+    total_emails = 0
+    total_urls = 0
+    urls_completed = 0
+    urls_pending = 0
+    try:
+        result = client.table("contacts").select("id", count="exact").execute()
+        total_emails = result.count or 0
+    except Exception:
+        pass
+    try:
+        result = client.table("urls").select("id", count="exact").execute()
+        total_urls = result.count or 0
+    except Exception:
+        pass
+    try:
+        result = client.table("urls").select("id", count="exact").eq("status", "completed").execute()
+        urls_completed = result.count or 0
+    except Exception:
+        pass
+    try:
+        result = client.table("urls").select("id", count="exact").eq("status", "pending").execute()
+        urls_pending = result.count or 0
+    except Exception:
+        pass
 
     # Calculate rates
-    per_minute = counts["last_5min"] / 5 if counts["last_5min"] else 0
-    per_hour = counts["last_1hr"]
+    emails_per_minute = email_counts["last_5min"] / 5 if email_counts["last_5min"] else 0
+    emails_per_hour = email_counts["last_1hr"]
+    urls_per_minute = url_counts["urls_last_5min"] / 5 if url_counts["urls_last_5min"] else 0
+    urls_per_hour = url_counts["urls_last_1hr"]
 
     # Get the very first contact timestamp for uptime calc
     first_contact_time = None
@@ -591,9 +635,16 @@ def get_performance_metrics() -> dict:
         pass
 
     return {
-        **counts,
-        "per_minute": round(per_minute, 1),
-        "per_hour": per_hour,
+        **email_counts,
+        **url_counts,
+        "total_emails": total_emails,
+        "total_urls": total_urls,
+        "urls_completed": urls_completed,
+        "urls_pending": urls_pending,
+        "per_minute": round(emails_per_minute, 1),
+        "per_hour": emails_per_hour,
+        "urls_per_minute": round(urls_per_minute, 1),
+        "urls_per_hour": urls_per_hour,
         "scraper_start": scraper_start,
         "first_contact": first_contact_time,
     }

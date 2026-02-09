@@ -176,19 +176,46 @@
                 <h2>Performance Monitor</h2>
                 <div class="perf-clock" id="perf-uptime">00:00:00</div>
             </div>
-            <div class="perf-grid">
+
+            <!-- Totals row -->
+            <div class="perf-grid" style="margin-bottom: .8rem;">
+                <div class="perf-metric" style="border-color:#e94560;">
+                    <div class="pm-label">Total Emails</div>
+                    <div class="pm-value" style="color:#e94560;font-size:1.6rem;" id="perf-total-emails">—</div>
+                    <div class="pm-unit">collected</div>
+                </div>
+                <div class="perf-metric" style="border-color:#5dade2;">
+                    <div class="pm-label">Total URLs</div>
+                    <div class="pm-value blue" style="font-size:1.6rem;" id="perf-total-urls">—</div>
+                    <div class="pm-unit">discovered</div>
+                </div>
+                <div class="perf-metric" style="border-color:#4ecca3;">
+                    <div class="pm-label">URLs Completed</div>
+                    <div class="pm-value" style="color:#4ecca3;font-size:1.6rem;" id="perf-urls-done">—</div>
+                    <div class="pm-unit">scraped</div>
+                </div>
+                <div class="perf-metric" style="border-color:#f39c12;">
+                    <div class="pm-label">URLs Pending</div>
+                    <div class="pm-value rate" style="font-size:1.6rem;" id="perf-urls-pending">—</div>
+                    <div class="pm-unit">in queue</div>
+                </div>
+            </div>
+
+            <!-- Email metrics -->
+            <div style="font-size:.7rem;color:#555;text-transform:uppercase;letter-spacing:.5px;margin-bottom:.4rem;padding-left:.2rem;">📧 Email Collection</div>
+            <div class="perf-grid" style="margin-bottom: .8rem;">
                 <div class="perf-metric">
-                    <div class="pm-label">Last 1 Minute</div>
+                    <div class="pm-label">Last 1 Min</div>
                     <div class="pm-value" id="perf-1min">—</div>
                     <div class="pm-unit">emails</div>
                 </div>
                 <div class="perf-metric">
-                    <div class="pm-label">Last 5 Minutes</div>
+                    <div class="pm-label">Last 5 Min</div>
                     <div class="pm-value" id="perf-5min">—</div>
                     <div class="pm-unit">emails</div>
                 </div>
                 <div class="perf-metric">
-                    <div class="pm-label">Last 15 Minutes</div>
+                    <div class="pm-label">Last 15 Min</div>
                     <div class="pm-value" id="perf-15min">—</div>
                     <div class="pm-unit">emails</div>
                 </div>
@@ -198,23 +225,69 @@
                     <div class="pm-unit">emails</div>
                 </div>
                 <div class="perf-metric">
-                    <div class="pm-label">Rate / Minute</div>
+                    <div class="pm-label">Emails / Min</div>
                     <div class="pm-value rate" id="perf-rate-min">—</div>
-                    <div class="pm-unit">avg over 5 min</div>
+                    <div class="pm-unit">avg 5 min</div>
                 </div>
                 <div class="perf-metric">
-                    <div class="pm-label">Rate / Hour</div>
+                    <div class="pm-label">Emails / Hour</div>
                     <div class="pm-value rate" id="perf-rate-hr">—</div>
-                    <div class="pm-unit">last hour total</div>
+                    <div class="pm-unit">last hour</div>
                 </div>
             </div>
+
+            <!-- URL metrics -->
+            <div style="font-size:.7rem;color:#555;text-transform:uppercase;letter-spacing:.5px;margin-bottom:.4rem;padding-left:.2rem;">🔗 URL Discovery</div>
+            <div class="perf-grid">
+                <div class="perf-metric">
+                    <div class="pm-label">Last 1 Min</div>
+                    <div class="pm-value blue" id="perf-urls-1min">—</div>
+                    <div class="pm-unit">urls</div>
+                </div>
+                <div class="perf-metric">
+                    <div class="pm-label">Last 5 Min</div>
+                    <div class="pm-value blue" id="perf-urls-5min">—</div>
+                    <div class="pm-unit">urls</div>
+                </div>
+                <div class="perf-metric">
+                    <div class="pm-label">Last 15 Min</div>
+                    <div class="pm-value blue" id="perf-urls-15min">—</div>
+                    <div class="pm-unit">urls</div>
+                </div>
+                <div class="perf-metric">
+                    <div class="pm-label">Last Hour</div>
+                    <div class="pm-value blue" id="perf-urls-1hr">—</div>
+                    <div class="pm-unit">urls</div>
+                </div>
+                <div class="perf-metric">
+                    <div class="pm-label">URLs / Min</div>
+                    <div class="pm-value rate" id="perf-urls-rate-min">—</div>
+                    <div class="pm-unit">avg 5 min</div>
+                </div>
+                <div class="perf-metric">
+                    <div class="pm-label">URLs / Hour</div>
+                    <div class="pm-value rate" id="perf-urls-rate-hr">—</div>
+                    <div class="pm-unit">last hour</div>
+                </div>
+            </div>
+
+            <!-- 24h progress bars -->
             <div class="perf-bar-wrap">
                 <div class="perf-bar-label">
-                    <span>24h Collection Progress</span>
+                    <span>📧 24h Email Collection</span>
                     <span id="perf-24hr-count">0 emails in last 24 hours</span>
                 </div>
                 <div class="perf-bar-track">
                     <div class="perf-bar-fill" id="perf-24hr-bar" style="width: 0%;"></div>
+                </div>
+            </div>
+            <div class="perf-bar-wrap" style="margin-top:.5rem;">
+                <div class="perf-bar-label">
+                    <span>🔗 24h URL Discovery</span>
+                    <span id="perf-urls-24hr-count">0 urls in last 24 hours</span>
+                </div>
+                <div class="perf-bar-track">
+                    <div class="perf-bar-fill" id="perf-urls-24hr-bar" style="width: 0%; background: linear-gradient(90deg, #5dade2, #3498db);"></div>
                 </div>
             </div>
         </div>
@@ -406,7 +479,13 @@
                 if (!res.ok) return;
                 const data = await res.json();
 
-                // Update metric values
+                // Totals
+                document.getElementById('perf-total-emails').textContent = (data.total_emails || 0).toLocaleString();
+                document.getElementById('perf-total-urls').textContent = (data.total_urls || 0).toLocaleString();
+                document.getElementById('perf-urls-done').textContent = (data.urls_completed || 0).toLocaleString();
+                document.getElementById('perf-urls-pending').textContent = (data.urls_pending || 0).toLocaleString();
+
+                // Email metrics
                 document.getElementById('perf-1min').textContent = (data.last_1min || 0).toLocaleString();
                 document.getElementById('perf-5min').textContent = (data.last_5min || 0).toLocaleString();
                 document.getElementById('perf-15min').textContent = (data.last_15min || 0).toLocaleString();
@@ -414,12 +493,25 @@
                 document.getElementById('perf-rate-min').textContent = (data.per_minute || 0).toFixed(1);
                 document.getElementById('perf-rate-hr').textContent = (data.per_hour || 0).toLocaleString();
 
-                // 24h bar
+                // URL metrics
+                document.getElementById('perf-urls-1min').textContent = (data.urls_last_1min || 0).toLocaleString();
+                document.getElementById('perf-urls-5min').textContent = (data.urls_last_5min || 0).toLocaleString();
+                document.getElementById('perf-urls-15min').textContent = (data.urls_last_15min || 0).toLocaleString();
+                document.getElementById('perf-urls-1hr').textContent = (data.urls_last_1hr || 0).toLocaleString();
+                document.getElementById('perf-urls-rate-min').textContent = (data.urls_per_minute || 0).toFixed(1);
+                document.getElementById('perf-urls-rate-hr').textContent = (data.urls_per_hour || 0).toLocaleString();
+
+                // 24h email bar
                 const count24 = data.last_24hr || 0;
                 document.getElementById('perf-24hr-count').textContent = count24.toLocaleString() + ' emails in last 24 hours';
-                // Scale bar: 100% = 1000 emails/day target (adjust as needed)
-                const barPct = Math.min(100, (count24 / 1000) * 100);
-                document.getElementById('perf-24hr-bar').style.width = barPct + '%';
+                const emailBarPct = Math.min(100, (count24 / 1000) * 100);
+                document.getElementById('perf-24hr-bar').style.width = emailBarPct + '%';
+
+                // 24h URL bar
+                const urlCount24 = data.urls_last_24hr || 0;
+                document.getElementById('perf-urls-24hr-count').textContent = urlCount24.toLocaleString() + ' urls in last 24 hours';
+                const urlBarPct = Math.min(100, (urlCount24 / 5000) * 100);
+                document.getElementById('perf-urls-24hr-bar').style.width = urlBarPct + '%';
 
                 // Set scraper start time (use running job start or first contact)
                 if (!scraperStartTime) {
