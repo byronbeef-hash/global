@@ -210,6 +210,12 @@ class YelpCrawler(DirectoryCrawler):
                     href = self.BASE_URL + href
                 contact["website"] = href
 
+            # Extract emails from listing text
+            text = listing.get_text()
+            email_match = re.search(r'[\w.+-]+@[\w-]+\.[\w.-]+', text)
+            if email_match:
+                contact["email"] = email_match.group(0).lower()
+
             if contact.get("farm_name"):
                 contacts.append(contact)
 
@@ -251,6 +257,19 @@ class MantaCrawler(DirectoryCrawler):
             addr_el = listing.select_one("[class*='address'], .address")
             if addr_el:
                 contact["address"] = addr_el.get_text(strip=True)
+
+            # Extract emails from listing text
+            text = listing.get_text()
+            email_match = re.search(r'[\w.+-]+@[\w-]+\.[\w.-]+', text)
+            if email_match:
+                contact["email"] = email_match.group(0).lower()
+
+            # Also check for mailto links
+            mailto_el = listing.select_one("a[href^='mailto:']")
+            if mailto_el and not contact.get("email"):
+                email = mailto_el["href"].replace("mailto:", "").split("?")[0].strip().lower()
+                if email:
+                    contact["email"] = email
 
             if contact.get("farm_name"):
                 contacts.append(contact)

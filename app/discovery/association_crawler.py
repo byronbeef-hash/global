@@ -1,15 +1,31 @@
-"""Crawl cattlemen's association and breed association directories."""
+"""Crawl cattlemen's association and breed association directories.
+
+Extracts both URLs (for later processing) and emails inline from every
+page fetched, so we never waste a page fetch without trying to harvest data.
+"""
 
 import asyncio
 import logging
+import re
 from urllib.parse import quote_plus, urlparse, urljoin
 
 from bs4 import BeautifulSoup
 
 from app.scraper.page_fetcher import PageFetcher
 from app.scraper.contact_extractor import ContactExtractor
+from app.db import queries as db
 
 logger = logging.getLogger(__name__)
+
+# Quick email regex for inline extraction (same as ContactExtractor)
+_EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
+_JUNK_DOMAINS = {
+    "example.com", "sentry.io", "wixpress.com", "googleapis.com",
+    "w3.org", "schema.org", "facebook.com", "twitter.com",
+    "instagram.com", "google.com", "googleusercontent.com",
+    "gstatic.com", "cloudflare.com", "jquery.com", "wordpress.com",
+    "wp.com", "gravatar.com", "bootstrapcdn.com",
+}
 
 ASSOCIATION_URLS = {
     "American Angus Association": "https://www.angus.org/find-a-breeder",
@@ -49,11 +65,17 @@ STATE_CATTLEMEN_URLS = {
 
 
 class AssociationCrawler:
-    """Crawl breed association and state cattlemen's association directories."""
+    """Crawl breed association and state cattlemen's association directories.
 
-    def __init__(self, fetcher: PageFetcher):
+    Now extracts emails inline from every page fetched, saving contacts
+    immediately rather than waiting for Phase 2 URL processing.
+    """
+
+    def __init__(self, fetcher: PageFetcher, country: str = "US"):
         self.fetcher = fetcher
         self.contact_extractor = ContactExtractor()
+        self.country = country
+        self._inline_emails_saved = 0
 
     async def crawl_breed_associations(self) -> list[str]:
         """Crawl breed association 'Find a Breeder' pages."""
@@ -65,6 +87,9 @@ class AssociationCrawler:
             if not result.success:
                 logger.warning(f"Failed to fetch {name}: {result.error}")
                 continue
+
+            # Extract emails inline from this page
+            self._extract_and_save_emails(result.html, url, source=name)
 
             urls = self._extract_breeder_links(result.html, url)
             all_urls.extend(urls)
@@ -86,6 +111,11 @@ class AssociationCrawler:
                 url = base_url.rstrip("/") + path
                 result = await self.fetcher.fetch(url)
                 if result.success and len(result.html) > 1000:
+                    # Extract emails inline from this page
+                    self._extract_and_save_emails(
+                        result.html, url, source=f"cattlemen-{state}", state=state,
+                    )
+
                     urls = self._extract_member_links(result.html, url)
                     if urls:
                         all_urls.extend(urls)
@@ -97,12 +127,53 @@ class AssociationCrawler:
 
     async def crawl_all(self, states: list[str] | None = None) -> list[str]:
         """Crawl all association sources. Returns discovered URLs."""
+        self._inline_emails_saved = 0
         breed_urls = await self.crawl_breed_associations()
         state_urls = await self.crawl_state_associations(states)
 
         all_urls = list(set(breed_urls + state_urls))
-        logger.info(f"Association crawl complete: {len(all_urls)} total URLs")
+        logger.info(
+            f"Association crawl complete: {len(all_urls)} URLs, "
+            f"{self._inline_emails_saved} emails saved inline"
+        )
         return all_urls
+
+    def _extract_and_save_emails(
+        self, html: str, source_url: str,
+        source: str = "association", state: str = "",
+    ) -> int:
+        """Extract emails from page HTML and save them immediately.
+
+        Returns number of new emails saved.
+        """
+        # Use the full ContactExtractor for thorough extraction
+        contact = self.contact_extractor.extract(html, source_url)
+
+        saved = 0
+        for email in contact.emails:
+            record = {
+                "email": email,
+                "farm_name": contact.farm_name,
+                "owner_name": contact.owner_name,
+                "phone": contact.phones[0] if contact.phones else "",
+                "address": contact.address,
+                "city": contact.city,
+                "state": state or contact.state,
+                "zip_code": contact.zip_code,
+                "country": self.country,
+                "website": contact.website,
+                "facebook": contact.facebook,
+                "instagram": contact.instagram,
+                "source_url": source_url,
+            }
+            if db.upsert_contact(record):
+                saved += 1
+                logger.debug(f"Inline email from {source}: {email}")
+
+        if saved:
+            logger.info(f"[{source}] Saved {saved} emails inline from {source_url}")
+        self._inline_emails_saved += saved
+        return saved
 
     def _extract_breeder_links(self, html: str, base_url: str) -> list[str]:
         soup = BeautifulSoup(html, "lxml")

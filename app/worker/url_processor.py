@@ -1,4 +1,8 @@
-"""Process a single URL: fetch → extract contacts → store to Supabase."""
+"""Process a single URL: fetch → extract contacts → store to Supabase.
+
+Optimised to avoid re-fetching pages when emails have already been
+captured inline by directory/association crawlers.
+"""
 
 import logging
 import re
@@ -28,8 +32,14 @@ class URLProcessor:
 
         Returns the number of new emails saved.
         """
-        # Check if already in DB
+        # Check if already processed
         if db.is_url_seen(url):
+            return 0
+
+        # Check if we already have a contact from this exact source_url
+        # (means a directory/association crawler already captured it inline)
+        if self._already_has_contact(url):
+            db.mark_url_done(url, emails_found=1)
             return 0
 
         result = await self.fetcher.fetch(url)
@@ -111,6 +121,26 @@ class URLProcessor:
         if not contact.emails:
             return []
         return [{"email": email, **base} for email in contact.emails]
+
+    @staticmethod
+    def _already_has_contact(url: str) -> bool:
+        """Check if we already have a contact with this source_url.
+
+        This avoids re-fetching pages that were already captured inline
+        by directory or association crawlers.
+        """
+        try:
+            client = db.get_client()
+            result = (
+                client.table("contacts")
+                .select("id")
+                .eq("source_url", url)
+                .limit(1)
+                .execute()
+            )
+            return bool(result.data)
+        except Exception:
+            return False
 
     @staticmethod
     def _find_contact_page_link(html: str, base_url: str) -> str | None:

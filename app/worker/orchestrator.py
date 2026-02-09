@@ -131,7 +131,7 @@ class Orchestrator:
                 await self._run_search_discovery(job_id, states, country)
 
             if job_type in ("full", "associations"):
-                await self._run_association_discovery(job_id, states)
+                await self._run_association_discovery(job_id, states, country)
 
             if self._shutdown:
                 return
@@ -187,14 +187,28 @@ class Orchestrator:
             f"{total_discovered} URLs ({config['name']})"
         )
 
-    async def _run_association_discovery(self, job_id: int, states: list[str]) -> None:
-        """Phase 1b: Discover URLs from association directories."""
+    async def _run_association_discovery(
+        self, job_id: int, states: list[str], country: str = "US"
+    ) -> None:
+        """Phase 1b: Discover URLs from association directories.
+
+        Now also extracts emails inline from every page fetched, so
+        contacts are saved immediately rather than waiting for Phase 2.
+        """
         logger.info(f"[Job {job_id}] Phase 1b: Association discovery")
 
-        crawler = AssociationCrawler(self.fetcher)
+        crawler = AssociationCrawler(self.fetcher, country=country)
         urls = await crawler.crawl_all(states)
-        added = db.add_urls(urls, source="association")
-        logger.info(f"[Job {job_id}] Association discovery: {added} new URLs")
+        added = db.add_urls(urls, source="association", country=country)
+
+        inline_saved = crawler._inline_emails_saved
+        logger.info(
+            f"[Job {job_id}] Association discovery: {added} new URLs, "
+            f"{inline_saved} emails saved inline"
+        )
+
+        if inline_saved:
+            self.job_manager.update_progress(job_id, emails_found=inline_saved)
 
     async def _process_pending_urls(
         self, job_id: int, country: str = "US"
