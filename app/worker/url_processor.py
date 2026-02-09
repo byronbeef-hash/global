@@ -130,7 +130,8 @@ class URLProcessor:
         by directory or association crawlers.
         """
         try:
-            client = db.get_client()
+            from app.db.supabase_client import get_client
+            client = get_client()
             result = (
                 client.table("contacts")
                 .select("id")
