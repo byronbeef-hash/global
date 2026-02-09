@@ -14,10 +14,13 @@
         .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
         h1 { font-size: 1.6rem; margin-bottom: 1.5rem; color: #fff; }
         h2 { font-size: 1.2rem; margin: 2rem 0 1rem; color: #ccc; }
+        .live-dot { display: inline-block; width: 8px; height: 8px; background: #4ecca3; border-radius: 50%; margin-right: 8px; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
         .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
-        .card { background: #16213e; border-radius: 10px; padding: 1.5rem; border: 1px solid #1f3460; }
+        .card { background: #16213e; border-radius: 10px; padding: 1.5rem; border: 1px solid #1f3460; transition: border-color 0.3s; }
+        .card.updated { border-color: #4ecca3; }
         .card .label { font-size: .8rem; color: #888; text-transform: uppercase; letter-spacing: .5px; }
-        .card .value { font-size: 2rem; font-weight: 700; color: #e94560; margin-top: .3rem; }
+        .card .value { font-size: 2rem; font-weight: 700; color: #e94560; margin-top: .3rem; transition: color 0.3s; }
         .card .value.green { color: #4ecca3; }
         .card .value.blue { color: #5dade2; }
         .card .value.orange { color: #f39c12; }
@@ -27,7 +30,7 @@
         tr:hover { background: #1f3460; }
 
         /* Country row styles */
-        .country-row { background: #16213e; }
+        .country-row { background: #16213e; cursor: pointer; }
         .country-row:hover { background: #1a2a50; }
         .country-row td { font-size: 1rem; padding: .9rem 1rem; }
         .expand-icon {
@@ -45,6 +48,10 @@
         .state-row td { color: #aaa; font-size: .85rem; background: #111b30; }
         .state-row:hover td { background: #162040; }
         .state-row td:first-child { color: #ccc; }
+
+        /* Update flash */
+        .flash { animation: flashGreen 1s ease; }
+        @keyframes flashGreen { 0% { color: #4ecca3; } 100% { } }
     </style>
 </head>
 <body>
@@ -57,58 +64,61 @@
         <a href="/stats">Stats</a>
     </nav>
     <div class="container">
-        <h1>Dashboard</h1>
+        <h1><span class="live-dot"></span>Dashboard <small style="font-size:.7rem;color:#666;" id="last-update"></small></h1>
 
         <div class="cards">
             <div class="card">
                 <div class="label">Total Emails</div>
-                <div class="value">{{total_emails}}</div>
+                <div class="value" id="stat-total-emails">{{total_emails}}</div>
             </div>
             <div class="card">
                 <div class="label">Emails Today</div>
-                <div class="value green">{{emails_today}}</div>
+                <div class="value green" id="stat-emails-today">{{emails_today}}</div>
             </div>
             <div class="card">
                 <div class="label">This Week</div>
-                <div class="value blue">{{emails_this_week}}</div>
+                <div class="value blue" id="stat-emails-week">{{emails_this_week}}</div>
             </div>
             <div class="card">
                 <div class="label">Active Jobs</div>
-                <div class="value orange">{{active_jobs}}</div>
+                <div class="value orange" id="stat-active-jobs">{{active_jobs}}</div>
             </div>
         </div>
 
         <div class="cards">
             <div class="card">
                 <div class="label">Total URLs</div>
-                <div class="value blue">{{total_urls}}</div>
+                <div class="value blue" id="stat-total-urls">{{total_urls}}</div>
             </div>
             <div class="card">
                 <div class="label">URLs Pending</div>
-                <div class="value orange">{{urls_pending}}</div>
+                <div class="value orange" id="stat-urls-pending">{{urls_pending}}</div>
             </div>
             <div class="card">
                 <div class="label">URLs Completed</div>
-                <div class="value green">{{urls_completed}}</div>
+                <div class="value green" id="stat-urls-completed">{{urls_completed}}</div>
             </div>
             <div class="card">
                 <div class="label">URLs Failed</div>
-                <div class="value">{{urls_failed}}</div>
+                <div class="value" id="stat-urls-failed">{{urls_failed}}</div>
             </div>
         </div>
 
         <h2>Emails by Country</h2>
-        <table>
+        <table id="country-table">
             <thead>
                 <tr><th>Country / Region</th><th>Email Count</th></tr>
             </thead>
-            <tbody>
+            <tbody id="country-body">
                 {{country_sections}}
             </tbody>
         </table>
     </div>
 
     <script>
+        // Track which countries are expanded
+        const expandedCountries = new Set();
+
         function toggleStates(countryCode) {
             const rows = document.querySelectorAll('.state-row-' + countryCode);
             const icon = document.getElementById('icon-' + countryCode);
@@ -121,10 +131,120 @@
             if (icon) {
                 icon.classList.toggle('expanded', isHidden);
             }
+
+            if (isHidden) {
+                expandedCountries.add(countryCode);
+            } else {
+                expandedCountries.delete(countryCode);
+            }
         }
 
-        // Auto-refresh every 30 seconds
-        setTimeout(() => location.reload(), 30000);
+        // Animate number counting up/down
+        function animateValue(el, newVal) {
+            const current = parseInt(el.textContent.replace(/,/g, '')) || 0;
+            if (current === newVal) return;
+
+            const diff = newVal - current;
+            const steps = 30;
+            const stepTime = 500 / steps;
+            let step = 0;
+
+            // Flash the card border
+            const card = el.closest('.card');
+            if (card && diff !== 0) {
+                card.classList.add('updated');
+                setTimeout(() => card.classList.remove('updated'), 1500);
+            }
+
+            const timer = setInterval(() => {
+                step++;
+                const progress = step / steps;
+                const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+                const value = Math.round(current + diff * eased);
+                el.textContent = value.toLocaleString();
+                if (step >= steps) {
+                    clearInterval(timer);
+                    el.textContent = newVal.toLocaleString();
+                }
+            }, stepTime);
+        }
+
+        // Fetch stats via AJAX and update in-place
+        async function refreshStats() {
+            try {
+                const [statsRes, countryRes] = await Promise.all([
+                    fetch('/api/stats'),
+                    fetch('/api/emails-by-country')
+                ]);
+
+                if (!statsRes.ok || !countryRes.ok) return;
+
+                const stats = await statsRes.json();
+                const countries = await countryRes.json();
+
+                // Update stat cards with animation
+                animateValue(document.getElementById('stat-total-emails'), stats.total_emails || 0);
+                animateValue(document.getElementById('stat-emails-today'), stats.emails_today || 0);
+                animateValue(document.getElementById('stat-emails-week'), stats.emails_this_week || 0);
+                animateValue(document.getElementById('stat-active-jobs'), stats.active_jobs || 0);
+                animateValue(document.getElementById('stat-total-urls'), stats.total_urls || 0);
+                animateValue(document.getElementById('stat-urls-pending'), stats.urls_pending || 0);
+                animateValue(document.getElementById('stat-urls-completed'), stats.urls_completed || 0);
+                animateValue(document.getElementById('stat-urls-failed'), stats.urls_failed || 0);
+
+                // Update country table (preserving expand state)
+                updateCountryTable(countries);
+
+                // Update timestamp
+                const now = new Date();
+                document.getElementById('last-update').textContent =
+                    'Updated ' + now.toLocaleTimeString();
+
+            } catch (e) {
+                console.error('Failed to refresh stats:', e);
+            }
+        }
+
+        const FLAGS = { US: '\u{1F1FA}\u{1F1F8}', NZ: '\u{1F1F3}\u{1F1FF}', UK: '\u{1F1EC}\u{1F1E7}', CA: '\u{1F1E8}\u{1F1E6}', AU: '\u{1F1E6}\u{1F1FA}' };
+
+        function updateCountryTable(countries) {
+            const tbody = document.getElementById('country-body');
+            let html = '';
+
+            for (const [code, info] of Object.entries(countries)) {
+                const flag = FLAGS[code] || '\u{1F30D}';
+                const hasStates = info.states && info.states.length > 0;
+                const isExpanded = expandedCountries.has(code);
+                const expandIcon = hasStates ? '\u25B6' : '';
+                const expandedClass = isExpanded ? ' expanded' : '';
+                const clickAttr = hasStates ? ` onclick="toggleStates('${code}')" style="cursor:pointer;"` : '';
+
+                html += `<tr class="country-row"${clickAttr}>`;
+                html += `<td><span class="expand-icon${expandedClass}" id="icon-${code}">${expandIcon}</span> `;
+                html += `${flag} <strong>${info.name}</strong> (${code})</td>`;
+                html += `<td><strong>${info.total.toLocaleString()}</strong></td>`;
+                html += `</tr>`;
+
+                if (info.states) {
+                    for (const s of info.states) {
+                        const display = isExpanded ? 'table-row' : 'none';
+                        html += `<tr class="state-row state-row-${code}" style="display:${display};">`;
+                        html += `<td style="padding-left:2.5rem;">${s.state}</td>`;
+                        html += `<td>${s.count.toLocaleString()}</td>`;
+                        html += `</tr>`;
+                    }
+                }
+            }
+
+            if (!html) {
+                html = '<tr><td colspan="2">No data yet</td></tr>';
+            }
+
+            tbody.innerHTML = html;
+        }
+
+        // Poll every 5 seconds for real-time updates
+        setInterval(refreshStats, 5000);
     </script>
 </body>
 </html>
