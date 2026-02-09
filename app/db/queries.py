@@ -85,6 +85,36 @@ def get_contacts_by_state(state: str, limit: int = 10000) -> list[dict]:
     return result.data or []
 
 
+def get_contacts_by_country(country: str, limit: int = 10000) -> list[dict]:
+    """Get all contacts for a country."""
+    client = get_client()
+    result = (
+        client.table("contacts")
+        .select("*")
+        .eq("country", country)
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return result.data or []
+
+
+def get_recent_contacts_filtered(
+    country: str = "",
+    state: str = "",
+    limit: int = 100,
+) -> list[dict]:
+    """Get recent contacts with optional country/state filter."""
+    client = get_client()
+    query = client.table("contacts").select("*")
+    if country:
+        query = query.eq("country", country)
+    if state:
+        query = query.eq("state", state)
+    result = query.order("created_at", desc=True).limit(limit).execute()
+    return result.data or []
+
+
 def get_all_contacts(limit: int = 100000) -> list[dict]:
     """Get all contacts (paginated internally)."""
     client = get_client()

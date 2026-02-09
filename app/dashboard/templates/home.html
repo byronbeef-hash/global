@@ -17,13 +17,19 @@
         .live-dot { display: inline-block; width: 8px; height: 8px; background: #4ecca3; border-radius: 50%; margin-right: 8px; animation: pulse 2s infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
         .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
-        .card { background: #16213e; border-radius: 10px; padding: 1.5rem; border: 1px solid #1f3460; transition: border-color 0.3s; }
+        .card {
+            background: #16213e; border-radius: 10px; padding: 1.5rem;
+            border: 1px solid #1f3460; transition: border-color 0.3s, transform 0.2s;
+            cursor: pointer; text-decoration: none; display: block;
+        }
+        .card:hover { border-color: #5dade2; transform: translateY(-2px); }
         .card.updated { border-color: #4ecca3; }
         .card .label { font-size: .8rem; color: #888; text-transform: uppercase; letter-spacing: .5px; }
         .card .value { font-size: 2rem; font-weight: 700; color: #e94560; margin-top: .3rem; transition: color 0.3s; }
         .card .value.green { color: #4ecca3; }
         .card .value.blue { color: #5dade2; }
         .card .value.orange { color: #f39c12; }
+        .card .hint { font-size: .7rem; color: #555; margin-top: .4rem; }
         table { width: 100%; border-collapse: collapse; background: #16213e; border-radius: 10px; overflow: hidden; }
         th { background: #1a1a2e; color: #888; font-size: .8rem; text-transform: uppercase; letter-spacing: .5px; padding: .8rem 1rem; text-align: left; }
         td { padding: .7rem 1rem; border-top: 1px solid #1f3460; font-size: .9rem; }
@@ -49,6 +55,14 @@
         .state-row:hover td { background: #162040; }
         .state-row td:first-child { color: #ccc; }
 
+        /* View link in table */
+        .view-link {
+            color: #5dade2; font-size: .8rem; text-decoration: none;
+            opacity: 0; transition: opacity 0.2s;
+        }
+        tr:hover .view-link { opacity: 1; }
+        .view-link:hover { text-decoration: underline; }
+
         /* Update flash */
         .flash { animation: flashGreen 1s ease; }
         @keyframes flashGreen { 0% { color: #4ecca3; } 100% { } }
@@ -67,47 +81,55 @@
         <h1><span class="live-dot"></span>Dashboard <small style="font-size:.7rem;color:#666;" id="last-update"></small></h1>
 
         <div class="cards">
-            <div class="card">
+            <a class="card" href="/recent">
                 <div class="label">Total Emails</div>
                 <div class="value" id="stat-total-emails">{{total_emails}}</div>
-            </div>
-            <div class="card">
+                <div class="hint">Click to view recent contacts</div>
+            </a>
+            <a class="card" href="/recent">
                 <div class="label">Emails Today</div>
                 <div class="value green" id="stat-emails-today">{{emails_today}}</div>
-            </div>
-            <div class="card">
+                <div class="hint">Click to view recent contacts</div>
+            </a>
+            <a class="card" href="/stats">
                 <div class="label">This Week</div>
                 <div class="value blue" id="stat-emails-week">{{emails_this_week}}</div>
-            </div>
-            <div class="card">
+                <div class="hint">Click to view statistics</div>
+            </a>
+            <a class="card" href="/jobs">
                 <div class="label">Active Jobs</div>
                 <div class="value orange" id="stat-active-jobs">{{active_jobs}}</div>
-            </div>
+                <div class="hint">Click to manage jobs</div>
+            </a>
         </div>
 
         <div class="cards">
-            <div class="card">
+            <a class="card" href="/stats">
                 <div class="label">Total URLs</div>
                 <div class="value blue" id="stat-total-urls">{{total_urls}}</div>
-            </div>
-            <div class="card">
+                <div class="hint">Click to view statistics</div>
+            </a>
+            <a class="card" href="/jobs">
                 <div class="label">URLs Pending</div>
                 <div class="value orange" id="stat-urls-pending">{{urls_pending}}</div>
-            </div>
-            <div class="card">
+                <div class="hint">Click to view jobs</div>
+            </a>
+            <a class="card" href="/stats">
                 <div class="label">URLs Completed</div>
                 <div class="value green" id="stat-urls-completed">{{urls_completed}}</div>
-            </div>
-            <div class="card">
+                <div class="hint">Click to view statistics</div>
+            </a>
+            <a class="card" href="/stats">
                 <div class="label">URLs Failed</div>
                 <div class="value" id="stat-urls-failed">{{urls_failed}}</div>
-            </div>
+                <div class="hint">Click to view statistics</div>
+            </a>
         </div>
 
         <h2>Emails by Country</h2>
         <table id="country-table">
             <thead>
-                <tr><th>Country / Region</th><th>Email Count</th></tr>
+                <tr><th>Country / Region</th><th>Email Count</th><th style="width:60px;"></th></tr>
             </thead>
             <tbody id="country-body">
                 {{country_sections}}
@@ -119,7 +141,10 @@
         // Track which countries are expanded
         const expandedCountries = new Set();
 
-        function toggleStates(countryCode) {
+        function toggleStates(countryCode, event) {
+            // Don't toggle if clicking a link
+            if (event && event.target.closest('a')) return;
+
             const rows = document.querySelectorAll('.state-row-' + countryCode);
             const icon = document.getElementById('icon-' + countryCode);
             const isHidden = rows.length > 0 && rows[0].style.display === 'none';
@@ -137,6 +162,22 @@
             } else {
                 expandedCountries.delete(countryCode);
             }
+        }
+
+        // Navigate to filtered recent page for a state
+        function viewState(countryCode, stateName, event) {
+            event.stopPropagation();
+            const params = new URLSearchParams();
+            params.set('country', countryCode);
+            params.set('state', stateName);
+            window.location.href = '/recent?' + params.toString();
+        }
+
+        // Navigate to filtered recent page for a country
+        function viewCountry(countryCode, event) {
+            event.preventDefault();
+            event.stopPropagation();
+            window.location.href = '/recent?country=' + countryCode;
         }
 
         // Animate number counting up/down
@@ -217,27 +258,30 @@
                 const isExpanded = expandedCountries.has(code);
                 const expandIcon = hasStates ? '\u25B6' : '';
                 const expandedClass = isExpanded ? ' expanded' : '';
-                const clickAttr = hasStates ? ` onclick="toggleStates('${code}')" style="cursor:pointer;"` : '';
+                const clickAttr = hasStates ? ` onclick="toggleStates('${code}', event)" style="cursor:pointer;"` : '';
 
                 html += `<tr class="country-row"${clickAttr}>`;
                 html += `<td><span class="expand-icon${expandedClass}" id="icon-${code}">${expandIcon}</span> `;
                 html += `${flag} <strong>${info.name}</strong> (${code})</td>`;
                 html += `<td><strong>${info.total.toLocaleString()}</strong></td>`;
+                html += `<td><a class="view-link" href="/recent?country=${code}" onclick="viewCountry('${code}', event)">View &rarr;</a></td>`;
                 html += `</tr>`;
 
                 if (info.states) {
                     for (const s of info.states) {
                         const display = isExpanded ? 'table-row' : 'none';
+                        const encodedState = encodeURIComponent(s.state);
                         html += `<tr class="state-row state-row-${code}" style="display:${display};">`;
                         html += `<td style="padding-left:2.5rem;">${s.state}</td>`;
                         html += `<td>${s.count.toLocaleString()}</td>`;
+                        html += `<td><a class="view-link" href="/recent?country=${code}&state=${encodedState}" onclick="viewState('${code}', '${s.state.replace(/'/g, "\\'")}', event)">View &rarr;</a></td>`;
                         html += `</tr>`;
                     }
                 }
             }
 
             if (!html) {
-                html = '<tr><td colspan="2">No data yet</td></tr>';
+                html = '<tr><td colspan="3">No data yet</td></tr>';
             }
 
             tbody.innerHTML = html;

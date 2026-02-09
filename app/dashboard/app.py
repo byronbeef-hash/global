@@ -3,6 +3,7 @@
 import csv
 import io
 import logging
+import urllib.parse
 from datetime import datetime
 from pathlib import Path
 
@@ -63,26 +64,29 @@ async def home():
             # Build state rows for this country
             state_rows_html = ""
             for s in states:
+                encoded_state = urllib.parse.quote(s["state"])
                 state_rows_html += (
                     f"<tr class='state-row state-row-{code}' style='display:none;'>"
                     f"<td style='padding-left:2.5rem;'>{s['state']}</td>"
                     f"<td>{s['count']:,}</td>"
+                    f"<td><a class='view-link' href='/recent?country={code}&state={encoded_state}'>View &rarr;</a></td>"
                     f"</tr>"
                 )
 
             expand_icon = "▶" if states else ""
-            clickable = f"onclick=\"toggleStates('{code}')\" style=\"cursor:pointer;\"" if states else ""
+            clickable = f"onclick=\"toggleStates('{code}', event)\" style=\"cursor:pointer;\"" if states else ""
 
             country_sections += (
                 f"<tr class='country-row' {clickable}>"
                 f"<td><span class='expand-icon' id='icon-{code}'>{expand_icon}</span> "
                 f"{flag} <strong>{name}</strong> ({code})</td>"
                 f"<td><strong>{total:,}</strong></td>"
+                f"<td><a class='view-link' href='/recent?country={code}' onclick=\"viewCountry('{code}', event)\">View &rarr;</a></td>"
                 f"</tr>"
                 f"{state_rows_html}"
             )
     else:
-        country_sections = "<tr><td colspan='2'>No data yet</td></tr>"
+        country_sections = "<tr><td colspan='3'>No data yet</td></tr>"
 
     return render_template(
         "home.html",
@@ -100,15 +104,34 @@ async def home():
 
 
 @app.get("/recent", response_class=HTMLResponse)
-async def recent():
-    contacts = db.get_recent_contacts(limit=100)
+async def recent(
+    country: str = Query(default="", description="Filter by country code"),
+    state: str = Query(default="", description="Filter by state"),
+):
+    contacts = db.get_recent_contacts_filtered(
+        country=country, state=state, limit=200,
+    )
+
+    # Build filter description
+    filter_desc = ""
+    if country or state:
+        parts = []
+        if country:
+            from app.config import COUNTRY_CONFIG
+            cname = COUNTRY_CONFIG.get(country, {}).get("name", country)
+            parts.append(cname)
+        if state:
+            parts.append(state)
+        filter_desc = " — " + ", ".join(parts)
 
     rows = ""
     for c in contacts:
+        country_code = c.get("country", "US")
         rows += (
             f"<tr>"
             f"<td>{c.get('email', '')}</td>"
             f"<td>{c.get('farm_name', '')}</td>"
+            f"<td>{country_code}</td>"
             f"<td>{c.get('state', '')}</td>"
             f"<td>{c.get('cattle_type', '')}</td>"
             f"<td>{c.get('breed', '')}</td>"
@@ -118,9 +141,16 @@ async def recent():
         )
 
     if not rows:
-        rows = "<tr><td colspan='7'>No contacts yet</td></tr>"
+        rows = "<tr><td colspan='8'>No contacts found</td></tr>"
 
-    return render_template("recent.html", contact_rows=rows)
+    return render_template(
+        "recent.html",
+        contact_rows=rows,
+        filter_desc=filter_desc,
+        result_count=f"{len(contacts):,}",
+        filter_country=country,
+        filter_state=state,
+    )
 
 
 @app.get("/export", response_class=HTMLResponse)
@@ -315,3 +345,16 @@ async def api_emails_per_state():
 async def api_emails_by_country():
     """JSON emails grouped by country with state breakdown."""
     return db.get_emails_by_country_and_state()
+
+
+@app.get("/api/recent")
+async def api_recent(
+    country: str = Query(default="", description="Filter by country"),
+    state: str = Query(default="", description="Filter by state"),
+    limit: int = Query(default=100, description="Limit results"),
+):
+    """JSON recent contacts with optional filters."""
+    contacts = db.get_recent_contacts_filtered(
+        country=country, state=state, limit=limit,
+    )
+    return {"count": len(contacts), "contacts": contacts}

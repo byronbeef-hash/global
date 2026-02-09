@@ -12,12 +12,57 @@
         nav a { color: #aaa; text-decoration: none; padding: 1rem; font-size: .9rem; }
         nav a:hover { color: #e94560; }
         .container { max-width: 1400px; margin: 0 auto; padding: 2rem; }
-        h1 { font-size: 1.6rem; margin-bottom: 1.5rem; color: #fff; }
+        h1 { font-size: 1.6rem; margin-bottom: .5rem; color: #fff; }
+        .subtitle { font-size: .9rem; color: #888; margin-bottom: 1.5rem; }
+        .filter-bar {
+            display: flex; align-items: center; gap: .8rem;
+            margin-bottom: 1.5rem; flex-wrap: wrap;
+        }
+        .filter-bar select {
+            padding: .5rem .8rem; background: #0f3460; border: 1px solid #333;
+            border-radius: 6px; color: #eee; font-size: .85rem;
+        }
+        .filter-bar .btn {
+            display: inline-block; padding: .5rem 1rem; background: #e94560;
+            color: white; border: none; border-radius: 6px; cursor: pointer;
+            font-size: .85rem; text-decoration: none;
+        }
+        .filter-bar .btn:hover { background: #c73a52; }
+        .filter-bar .btn-clear {
+            background: transparent; border: 1px solid #555; color: #aaa;
+        }
+        .filter-bar .btn-clear:hover { background: #333; color: #eee; }
+        .badge {
+            display: inline-block; padding: .2rem .6rem; border-radius: 4px;
+            font-size: .75rem; font-weight: 600; background: #1f3460; color: #5dade2;
+        }
         table { width: 100%; border-collapse: collapse; background: #16213e; border-radius: 10px; overflow: hidden; }
         th { background: #1a1a2e; color: #888; font-size: .8rem; text-transform: uppercase; letter-spacing: .5px; padding: .8rem 1rem; text-align: left; position: sticky; top: 0; }
         td { padding: .6rem 1rem; border-top: 1px solid #1f3460; font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px; }
         tr:hover { background: #1f3460; }
+        tr { cursor: pointer; }
         a { color: #5dade2; }
+        .tag { display: inline-block; padding: .15rem .4rem; border-radius: 3px; font-size: .7rem; background: #1a2a50; color: #aaa; }
+
+        /* Detail modal */
+        .modal-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,.7); z-index: 100; justify-content: center; align-items: center;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal {
+            background: #16213e; border: 1px solid #1f3460; border-radius: 12px;
+            padding: 2rem; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto;
+        }
+        .modal h2 { font-size: 1.2rem; color: #fff; margin-bottom: 1rem; }
+        .modal .close-btn {
+            float: right; background: none; border: none; color: #888; font-size: 1.5rem;
+            cursor: pointer; line-height: 1;
+        }
+        .modal .close-btn:hover { color: #e94560; }
+        .detail-grid { display: grid; grid-template-columns: auto 1fr; gap: .4rem 1rem; }
+        .detail-grid .label { color: #888; font-size: .85rem; text-transform: uppercase; }
+        .detail-grid .val { font-size: .9rem; color: #eee; word-break: break-all; }
     </style>
 </head>
 <body>
@@ -30,28 +75,157 @@
         <a href="/stats">Stats</a>
     </nav>
     <div class="container">
-        <h1>Recent Contacts (Last 100)</h1>
+        <h1>Recent Contacts{{filter_desc}}</h1>
+        <div class="subtitle">Showing {{result_count}} most recent contacts</div>
+
+        <div class="filter-bar">
+            <select id="filter-country" onchange="applyFilter()">
+                <option value="">All Countries</option>
+                <option value="US">🇺🇸 United States</option>
+                <option value="NZ">🇳🇿 New Zealand</option>
+                <option value="UK">🇬🇧 United Kingdom</option>
+                <option value="CA">🇨🇦 Canada</option>
+                <option value="AU">🇦🇺 Australia</option>
+            </select>
+            <select id="filter-state">
+                <option value="">All Regions</option>
+            </select>
+            <button class="btn" onclick="applyFilter()">Filter</button>
+            <a class="btn btn-clear" href="/recent">Clear</a>
+        </div>
+
         <div style="overflow-x: auto;">
             <table>
                 <thead>
                     <tr>
                         <th>Email</th>
                         <th>Farm Name</th>
-                        <th>State</th>
+                        <th>Country</th>
+                        <th>State/Region</th>
                         <th>Type</th>
                         <th>Breed</th>
                         <th>Source</th>
                         <th>Added</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="contacts-body">
                     {{contact_rows}}
                 </tbody>
             </table>
         </div>
     </div>
+
+    <!-- Detail Modal -->
+    <div class="modal-overlay" id="detail-modal" onclick="if(event.target===this)closeModal()">
+        <div class="modal">
+            <button class="close-btn" onclick="closeModal()">&times;</button>
+            <h2 id="modal-title">Contact Details</h2>
+            <div class="detail-grid" id="modal-body"></div>
+        </div>
+    </div>
+
     <script>
-        setTimeout(() => location.reload(), 30000);
+        // Set filter dropdowns to current values
+        const urlParams = new URLSearchParams(window.location.search);
+        const currentCountry = '{{filter_country}}';
+        const currentState = '{{filter_state}}';
+
+        if (currentCountry) {
+            document.getElementById('filter-country').value = currentCountry;
+        }
+
+        function applyFilter() {
+            const country = document.getElementById('filter-country').value;
+            const state = document.getElementById('filter-state').value;
+            const params = new URLSearchParams();
+            if (country) params.set('country', country);
+            if (state) params.set('state', state);
+            const qs = params.toString();
+            window.location.href = '/recent' + (qs ? '?' + qs : '');
+        }
+
+        // Load states for selected country from API
+        async function loadStates() {
+            const country = document.getElementById('filter-country').value;
+            const stateSelect = document.getElementById('filter-state');
+            stateSelect.innerHTML = '<option value="">All Regions</option>';
+
+            if (!country) return;
+
+            try {
+                const res = await fetch('/api/emails-by-country');
+                if (!res.ok) return;
+                const data = await res.json();
+                const info = data[country];
+                if (info && info.states) {
+                    for (const s of info.states) {
+                        const opt = document.createElement('option');
+                        opt.value = s.state;
+                        opt.textContent = `${s.state} (${s.count.toLocaleString()})`;
+                        stateSelect.appendChild(opt);
+                    }
+                }
+                if (currentState) {
+                    stateSelect.value = currentState;
+                }
+            } catch (e) {
+                console.error('Failed to load states:', e);
+            }
+        }
+
+        document.getElementById('filter-country').addEventListener('change', loadStates);
+        // Load states on page load if country is set
+        if (currentCountry) loadStates();
+
+        // Row click to show detail modal
+        document.getElementById('contacts-body').addEventListener('click', function(e) {
+            const row = e.target.closest('tr');
+            if (!row) return;
+            const cells = row.querySelectorAll('td');
+            if (cells.length < 8) return;
+
+            const fields = [
+                ['Email', cells[0].textContent],
+                ['Farm Name', cells[1].textContent],
+                ['Country', cells[2].textContent],
+                ['State/Region', cells[3].textContent],
+                ['Cattle Type', cells[4].textContent],
+                ['Breed', cells[5].textContent],
+                ['Source', cells[6].querySelector('a') ? cells[6].querySelector('a').href : ''],
+                ['Added', cells[7].textContent],
+            ];
+
+            const modal = document.getElementById('detail-modal');
+            const body = document.getElementById('modal-body');
+            const title = document.getElementById('modal-title');
+
+            title.textContent = fields[1][1] || fields[0][1];
+
+            let html = '';
+            for (const [label, val] of fields) {
+                if (!val) continue;
+                let display = val;
+                if (label === 'Source' && val.startsWith('http')) {
+                    display = `<a href="${val}" target="_blank" style="color:#5dade2;word-break:break-all;">${val}</a>`;
+                } else if (label === 'Email') {
+                    display = `<a href="mailto:${val}" style="color:#5dade2;">${val}</a>`;
+                }
+                html += `<div class="label">${label}</div><div class="val">${display}</div>`;
+            }
+            body.innerHTML = html;
+            modal.classList.add('active');
+        });
+
+        function closeModal() {
+            document.getElementById('detail-modal').classList.remove('active');
+        }
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') closeModal();
+        });
+
+        // Auto-refresh every 15 seconds
+        setTimeout(() => location.reload(), 15000);
     </script>
 </body>
 </html>
