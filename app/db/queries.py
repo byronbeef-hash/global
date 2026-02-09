@@ -143,10 +143,23 @@ def get_emails_by_country_and_state() -> dict:
 
     client = get_client()
 
-    # Get all country+state pairs
+    # Get all country+state pairs (paginated — Supabase default limit is 1000)
+    rows = []
     try:
-        result = client.table("contacts").select("country, state").execute()
-        rows = result.data or []
+        offset = 0
+        page_size = 1000
+        while True:
+            result = (
+                client.table("contacts")
+                .select("country, state")
+                .range(offset, offset + page_size - 1)
+                .execute()
+            )
+            batch = result.data or []
+            rows.extend(batch)
+            if len(batch) < page_size:
+                break
+            offset += page_size
     except Exception as e:
         logger.error(f"Failed to fetch country/state data: {e}")
         rows = []
