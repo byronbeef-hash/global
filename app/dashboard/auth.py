@@ -13,7 +13,7 @@ PUBLIC_PATHS = {"/health", "/favicon.ico"}
 
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
-    """Check for API key in header or query parameter."""
+    """Check for API key in header, query parameter, or cookie."""
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
@@ -22,10 +22,11 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         if path in PUBLIC_PATHS:
             return await call_next(request)
 
-        # Check API key
+        # Check API key from multiple sources
+        key_from_query = request.query_params.get("key")
         api_key = (
             request.headers.get("X-API-Key")
-            or request.query_params.get("key")
+            or key_from_query
             or request.cookies.get("api_key")
         )
 
@@ -39,7 +40,21 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
                 )
             raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
-        return await call_next(request)
+        # Process the request
+        response = await call_next(request)
+
+        # If key came from URL query param, set a cookie so nav links work
+        if key_from_query == DASHBOARD_API_KEY:
+            response.set_cookie(
+                key="api_key",
+                value=api_key,
+                path="/",
+                max_age=86400 * 30,  # 30 days
+                httponly=True,
+                samesite="lax",
+            )
+
+        return response
 
 
 LOGIN_HTML = """
