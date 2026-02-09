@@ -518,3 +518,82 @@ def get_completed_query_count() -> int:
     client = get_client()
     result = client.table("search_queries").select("id", count="exact").execute()
     return result.count or 0
+
+
+# ── Performance Metrics ──────────────────────────────────────────────
+
+def get_performance_metrics() -> dict:
+    """Get performance metrics: emails added in recent time windows.
+
+    Returns dict with counts for last 1min, 5min, 15min, 1hr, 24hr,
+    plus overall rate calculations.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    client = get_client()
+    now = datetime.now(timezone.utc)
+
+    windows = {
+        "last_1min": now - timedelta(minutes=1),
+        "last_5min": now - timedelta(minutes=5),
+        "last_15min": now - timedelta(minutes=15),
+        "last_1hr": now - timedelta(hours=1),
+        "last_24hr": now - timedelta(hours=24),
+    }
+
+    counts = {}
+    for key, since in windows.items():
+        try:
+            result = (
+                client.table("contacts")
+                .select("id", count="exact")
+                .gte("created_at", since.isoformat())
+                .execute()
+            )
+            counts[key] = result.count or 0
+        except Exception as e:
+            logger.error(f"Performance metric {key} failed: {e}")
+            counts[key] = 0
+
+    # Calculate rates
+    per_minute = counts["last_5min"] / 5 if counts["last_5min"] else 0
+    per_hour = counts["last_1hr"]
+
+    # Get the very first contact timestamp for uptime calc
+    first_contact_time = None
+    try:
+        result = (
+            client.table("contacts")
+            .select("created_at")
+            .order("created_at")
+            .limit(1)
+            .execute()
+        )
+        if result.data:
+            first_contact_time = result.data[0]["created_at"]
+    except Exception:
+        pass
+
+    # Get scraper start time (oldest running job or first contact)
+    scraper_start = None
+    try:
+        result = (
+            client.table("scrape_jobs")
+            .select("started_at")
+            .eq("status", "running")
+            .order("started_at")
+            .limit(1)
+            .execute()
+        )
+        if result.data and result.data[0].get("started_at"):
+            scraper_start = result.data[0]["started_at"]
+    except Exception:
+        pass
+
+    return {
+        **counts,
+        "per_minute": round(per_minute, 1),
+        "per_hour": per_hour,
+        "scraper_start": scraper_start,
+        "first_contact": first_contact_time,
+    }

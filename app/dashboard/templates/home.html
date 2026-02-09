@@ -30,6 +30,50 @@
         .card .value.blue { color: #5dade2; }
         .card .value.orange { color: #f39c12; }
         .card .hint { font-size: .7rem; color: #555; margin-top: .4rem; }
+
+        /* Performance Timer Section */
+        .perf-section {
+            background: #16213e; border-radius: 10px; padding: 1.5rem;
+            border: 1px solid #1f3460; margin-bottom: 2rem;
+        }
+        .perf-header {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 1rem;
+        }
+        .perf-header h2 { margin: 0; font-size: 1.1rem; color: #ccc; }
+        .perf-clock {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 1.8rem; font-weight: 700; color: #5dade2;
+            letter-spacing: 2px;
+        }
+        .perf-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: .8rem;
+        }
+        .perf-metric {
+            background: #111b30; border-radius: 8px; padding: 1rem;
+            text-align: center; border: 1px solid #1a2a50;
+        }
+        .perf-metric .pm-label { font-size: .7rem; color: #666; text-transform: uppercase; letter-spacing: .5px; }
+        .perf-metric .pm-value { font-size: 1.4rem; font-weight: 700; color: #4ecca3; margin: .2rem 0; }
+        .perf-metric .pm-value.rate { color: #f39c12; }
+        .perf-metric .pm-value.blue { color: #5dade2; }
+        .perf-metric .pm-unit { font-size: .7rem; color: #555; }
+        .perf-bar-wrap {
+            margin-top: 1rem; background: #111b30; border-radius: 6px;
+            padding: .8rem 1rem; border: 1px solid #1a2a50;
+        }
+        .perf-bar-label {
+            display: flex; justify-content: space-between; font-size: .75rem; color: #888; margin-bottom: .4rem;
+        }
+        .perf-bar-track {
+            height: 6px; background: #0a1020; border-radius: 3px; overflow: hidden;
+        }
+        .perf-bar-fill {
+            height: 100%; background: linear-gradient(90deg, #4ecca3, #5dade2);
+            border-radius: 3px; transition: width 1s ease;
+        }
+
         table { width: 100%; border-collapse: collapse; background: #16213e; border-radius: 10px; overflow: hidden; }
         th { background: #1a1a2e; color: #888; font-size: .8rem; text-transform: uppercase; letter-spacing: .5px; padding: .8rem 1rem; text-align: left; }
         td { padding: .7rem 1rem; border-top: 1px solid #1f3460; font-size: .9rem; }
@@ -124,6 +168,55 @@
                 <div class="value" id="stat-urls-failed">{{urls_failed}}</div>
                 <div class="hint">Click to view statistics</div>
             </a>
+        </div>
+
+        <!-- Performance Timer -->
+        <div class="perf-section">
+            <div class="perf-header">
+                <h2>Performance Monitor</h2>
+                <div class="perf-clock" id="perf-uptime">00:00:00</div>
+            </div>
+            <div class="perf-grid">
+                <div class="perf-metric">
+                    <div class="pm-label">Last 1 Minute</div>
+                    <div class="pm-value" id="perf-1min">—</div>
+                    <div class="pm-unit">emails</div>
+                </div>
+                <div class="perf-metric">
+                    <div class="pm-label">Last 5 Minutes</div>
+                    <div class="pm-value" id="perf-5min">—</div>
+                    <div class="pm-unit">emails</div>
+                </div>
+                <div class="perf-metric">
+                    <div class="pm-label">Last 15 Minutes</div>
+                    <div class="pm-value" id="perf-15min">—</div>
+                    <div class="pm-unit">emails</div>
+                </div>
+                <div class="perf-metric">
+                    <div class="pm-label">Last Hour</div>
+                    <div class="pm-value blue" id="perf-1hr">—</div>
+                    <div class="pm-unit">emails</div>
+                </div>
+                <div class="perf-metric">
+                    <div class="pm-label">Rate / Minute</div>
+                    <div class="pm-value rate" id="perf-rate-min">—</div>
+                    <div class="pm-unit">avg over 5 min</div>
+                </div>
+                <div class="perf-metric">
+                    <div class="pm-label">Rate / Hour</div>
+                    <div class="pm-value rate" id="perf-rate-hr">—</div>
+                    <div class="pm-unit">last hour total</div>
+                </div>
+            </div>
+            <div class="perf-bar-wrap">
+                <div class="perf-bar-label">
+                    <span>24h Collection Progress</span>
+                    <span id="perf-24hr-count">0 emails in last 24 hours</span>
+                </div>
+                <div class="perf-bar-track">
+                    <div class="perf-bar-fill" id="perf-24hr-bar" style="width: 0%;"></div>
+                </div>
+            </div>
         </div>
 
         <h2>Emails by Country</h2>
@@ -286,6 +379,64 @@
 
             tbody.innerHTML = html;
         }
+
+        // ── Performance Timer ──────────────────────────────────
+        let scraperStartTime = null;
+
+        function formatUptime(seconds) {
+            const d = Math.floor(seconds / 86400);
+            const h = Math.floor((seconds % 86400) / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = Math.floor(seconds % 60);
+            const pad = n => String(n).padStart(2, '0');
+            if (d > 0) return `${d}d ${pad(h)}:${pad(m)}:${pad(s)}`;
+            return `${pad(h)}:${pad(m)}:${pad(s)}`;
+        }
+
+        function tickUptime() {
+            if (!scraperStartTime) return;
+            const now = new Date();
+            const elapsed = (now - scraperStartTime) / 1000;
+            document.getElementById('perf-uptime').textContent = formatUptime(elapsed);
+        }
+
+        async function refreshPerformance() {
+            try {
+                const res = await fetch('/api/performance');
+                if (!res.ok) return;
+                const data = await res.json();
+
+                // Update metric values
+                document.getElementById('perf-1min').textContent = (data.last_1min || 0).toLocaleString();
+                document.getElementById('perf-5min').textContent = (data.last_5min || 0).toLocaleString();
+                document.getElementById('perf-15min').textContent = (data.last_15min || 0).toLocaleString();
+                document.getElementById('perf-1hr').textContent = (data.last_1hr || 0).toLocaleString();
+                document.getElementById('perf-rate-min').textContent = (data.per_minute || 0).toFixed(1);
+                document.getElementById('perf-rate-hr').textContent = (data.per_hour || 0).toLocaleString();
+
+                // 24h bar
+                const count24 = data.last_24hr || 0;
+                document.getElementById('perf-24hr-count').textContent = count24.toLocaleString() + ' emails in last 24 hours';
+                // Scale bar: 100% = 1000 emails/day target (adjust as needed)
+                const barPct = Math.min(100, (count24 / 1000) * 100);
+                document.getElementById('perf-24hr-bar').style.width = barPct + '%';
+
+                // Set scraper start time (use running job start or first contact)
+                if (!scraperStartTime) {
+                    const startStr = data.scraper_start || data.first_contact;
+                    if (startStr) {
+                        scraperStartTime = new Date(startStr);
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to refresh performance:', e);
+            }
+        }
+
+        // Initial load + periodic refresh
+        refreshPerformance();
+        setInterval(refreshPerformance, 10000);
+        setInterval(tickUptime, 1000);
 
         // Poll every 5 seconds for real-time updates
         setInterval(refreshStats, 5000);

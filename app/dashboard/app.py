@@ -358,3 +358,9 @@ async def api_recent(
         country=country, state=state, limit=limit,
     )
     return {"count": len(contacts), "contacts": contacts}
+
+
+@app.get("/api/performance")
+async def api_performance():
+    """JSON performance metrics: collection rates and timing."""
+    return db.get_performance_metrics()

@@ -142,8 +142,8 @@ class Orchestrator:
             if self._shutdown:
                 return
 
-            # Phase 3: Directory crawling (US only for now)
-            if job_type in ("full", "directories") and country == "US":
+            # Phase 3: Directory crawling (all countries with YellowPages)
+            if job_type in ("full", "directories"):
                 await self._run_directory_crawlers(job_id, states, country)
 
             self.job_manager.complete_job(job_id)
@@ -249,14 +249,24 @@ class Orchestrator:
     async def _run_directory_crawlers(
         self, job_id: int, states: list[str], country: str = "US"
     ) -> None:
-        """Phase 3: Run directory crawlers for direct extraction."""
-        logger.info(f"[Job {job_id}] Phase 3: Directory crawlers")
+        """Phase 3: Run directory crawlers for direct extraction.
 
-        crawlers = [
-            ("YellowPages", YellowPagesCrawler(self.fetcher)),
-            ("Yelp", YelpCrawler(self.fetcher)),
-            ("Manta", MantaCrawler(self.fetcher)),
+        YellowPages runs for all countries. Yelp and Manta only run for US.
+        """
+        config = get_country_config(country)
+        logger.info(
+            f"[Job {job_id}] Phase 3: Directory crawlers ({config['name']})"
+        )
+
+        # YellowPages runs for ALL countries (country-specific URLs)
+        crawlers: list[tuple[str, DirectoryCrawler]] = [
+            (f"YellowPages-{country}", YellowPagesCrawler(self.fetcher, country=country)),
         ]
+
+        # Yelp and Manta only available for US
+        if country == "US":
+            crawlers.append(("Yelp", YelpCrawler(self.fetcher)))
+            crawlers.append(("Manta", MantaCrawler(self.fetcher)))
 
         for name, crawler in crawlers:
             if self._shutdown:

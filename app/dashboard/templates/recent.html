@@ -224,8 +224,52 @@
             if (e.key === 'Escape') closeModal();
         });
 
-        // Auto-refresh every 15 seconds
-        setTimeout(() => location.reload(), 15000);
+        // AJAX refresh for contacts table (no full page reload)
+        async function refreshContacts() {
+            try {
+                const country = '{{filter_country}}';
+                const state = '{{filter_state}}';
+                const params = new URLSearchParams();
+                if (country) params.set('country', country);
+                if (state) params.set('state', state);
+                params.set('limit', '200');
+
+                const res = await fetch('/api/recent?' + params.toString());
+                if (!res.ok) return;
+                const data = await res.json();
+
+                const tbody = document.getElementById('contacts-body');
+                if (!data.contacts || data.contacts.length === 0) {
+                    tbody.innerHTML = "<tr><td colspan='8'>No contacts found</td></tr>";
+                    return;
+                }
+
+                let html = '';
+                for (const c of data.contacts) {
+                    const created = (c.created_at || '').substring(0, 19);
+                    html += `<tr>`;
+                    html += `<td>${c.email || ''}</td>`;
+                    html += `<td>${c.farm_name || ''}</td>`;
+                    html += `<td>${c.country || 'US'}</td>`;
+                    html += `<td>${c.state || ''}</td>`;
+                    html += `<td>${c.cattle_type || ''}</td>`;
+                    html += `<td>${c.breed || ''}</td>`;
+                    html += `<td><a href="${c.source_url || ''}" target="_blank">link</a></td>`;
+                    html += `<td>${created}</td>`;
+                    html += `</tr>`;
+                }
+                tbody.innerHTML = html;
+
+                // Update count
+                document.querySelector('.subtitle').textContent =
+                    'Showing ' + data.count.toLocaleString() + ' most recent contacts';
+            } catch (e) {
+                console.error('Failed to refresh contacts:', e);
+            }
+        }
+
+        // Refresh every 30 seconds (no full page reload)
+        setInterval(refreshContacts, 30000);
     </script>
 </body>
 </html>
