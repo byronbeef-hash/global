@@ -25,6 +25,26 @@
         th { background: #1a1a2e; color: #888; font-size: .8rem; text-transform: uppercase; letter-spacing: .5px; padding: .8rem 1rem; text-align: left; }
         td { padding: .7rem 1rem; border-top: 1px solid #1f3460; font-size: .9rem; }
         tr:hover { background: #1f3460; }
+
+        /* Country row styles */
+        .country-row { background: #16213e; }
+        .country-row:hover { background: #1a2a50; }
+        .country-row td { font-size: 1rem; padding: .9rem 1rem; }
+        .expand-icon {
+            display: inline-block;
+            width: 1rem;
+            text-align: center;
+            font-size: .75rem;
+            color: #5dade2;
+            transition: transform 0.2s ease;
+            margin-right: .3rem;
+        }
+        .expand-icon.expanded { transform: rotate(90deg); }
+
+        /* State row styles */
+        .state-row td { color: #aaa; font-size: .85rem; background: #111b30; }
+        .state-row:hover td { background: #162040; }
+        .state-row td:first-child { color: #ccc; }
     </style>
 </head>
 <body>
@@ -77,18 +97,32 @@
             </div>
         </div>
 
-        <h2>Emails by State</h2>
+        <h2>Emails by Country</h2>
         <table>
             <thead>
-                <tr><th>State</th><th>Email Count</th></tr>
+                <tr><th>Country / Region</th><th>Email Count</th></tr>
             </thead>
             <tbody>
-                {{state_rows}}
+                {{country_sections}}
             </tbody>
         </table>
     </div>
 
     <script>
+        function toggleStates(countryCode) {
+            const rows = document.querySelectorAll('.state-row-' + countryCode);
+            const icon = document.getElementById('icon-' + countryCode);
+            const isHidden = rows.length > 0 && rows[0].style.display === 'none';
+
+            rows.forEach(row => {
+                row.style.display = isHidden ? 'table-row' : 'none';
+            });
+
+            if (icon) {
+                icon.classList.toggle('expanded', isHidden);
+            }
+        }
+
         // Auto-refresh every 30 seconds
         setTimeout(() => location.reload(), 30000);
     </script>

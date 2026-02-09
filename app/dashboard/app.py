@@ -46,15 +46,43 @@ async def health():
 @app.get("/", response_class=HTMLResponse)
 async def home():
     stats = db.get_dashboard_stats()
-    state_data = db.get_emails_per_state()
+    country_data = db.get_emails_by_country_and_state()
 
-    # Build state table rows
-    state_rows = ""
-    if state_data:
-        for row in state_data:
-            state_rows += f"<tr><td>{row['state']}</td><td>{row['count']:,}</td></tr>"
+    # Country flag emojis
+    flags = {"US": "🇺🇸", "NZ": "🇳🇿", "UK": "🇬🇧", "CA": "🇨🇦", "AU": "🇦🇺"}
+
+    # Build country sections with expandable state tables
+    country_sections = ""
+    if country_data:
+        for code, info in country_data.items():
+            flag = flags.get(code, "🌍")
+            name = info["name"]
+            total = info["total"]
+            states = info["states"]
+
+            # Build state rows for this country
+            state_rows_html = ""
+            for s in states:
+                state_rows_html += (
+                    f"<tr class='state-row state-row-{code}' style='display:none;'>"
+                    f"<td style='padding-left:2.5rem;'>{s['state']}</td>"
+                    f"<td>{s['count']:,}</td>"
+                    f"</tr>"
+                )
+
+            expand_icon = "▶" if states else ""
+            clickable = f"onclick=\"toggleStates('{code}')\" style=\"cursor:pointer;\"" if states else ""
+
+            country_sections += (
+                f"<tr class='country-row' {clickable}>"
+                f"<td><span class='expand-icon' id='icon-{code}'>{expand_icon}</span> "
+                f"{flag} <strong>{name}</strong> ({code})</td>"
+                f"<td><strong>{total:,}</strong></td>"
+                f"</tr>"
+                f"{state_rows_html}"
+            )
     else:
-        state_rows = "<tr><td colspan='2'>No data yet</td></tr>"
+        country_sections = "<tr><td colspan='2'>No data yet</td></tr>"
 
     return render_template(
         "home.html",
@@ -67,7 +95,7 @@ async def home():
         completed_jobs=stats.get("completed_jobs", 0),
         emails_today=f"{stats.get('emails_today', 0):,}",
         emails_this_week=f"{stats.get('emails_this_week', 0):,}",
-        state_rows=state_rows,
+        country_sections=country_sections,
     )
 
 
@@ -281,3 +309,9 @@ async def api_stats():
 async def api_emails_per_state():
     """JSON emails per state."""
     return db.get_emails_per_state()
+
+
+@app.get("/api/emails-by-country")
+async def api_emails_by_country():
+    """JSON emails grouped by country with state breakdown."""
+    return db.get_emails_by_country_and_state()

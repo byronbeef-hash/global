@@ -129,6 +129,62 @@ def get_emails_per_country() -> list[dict]:
         return [{"country": c, "count": n} for c, n in sorted(country_counts.items(), key=lambda x: -x[1])]
 
 
+def get_emails_by_country_and_state() -> dict:
+    """Get email counts grouped by country, then by state/region within each country.
+
+    Returns dict like:
+    {
+        "US": {"name": "United States", "total": 17243, "states": [{"state": "ND", "count": 1535}, ...]},
+        "NZ": {"name": "New Zealand", "total": 0, "states": []},
+        ...
+    }
+    """
+    from app.config import COUNTRY_CONFIG, ACTIVE_COUNTRIES
+
+    client = get_client()
+
+    # Get all country+state pairs
+    try:
+        result = client.table("contacts").select("country, state").execute()
+        rows = result.data or []
+    except Exception as e:
+        logger.error(f"Failed to fetch country/state data: {e}")
+        rows = []
+
+    # Build nested counts
+    country_state_counts: dict[str, dict[str, int]] = {}
+    country_totals: dict[str, int] = {}
+    for row in rows:
+        c = row.get("country") or "US"
+        s = row.get("state") or "Unknown"
+        if c not in country_state_counts:
+            country_state_counts[c] = {}
+            country_totals[c] = 0
+        country_state_counts[c][s] = country_state_counts[c].get(s, 0) + 1
+        country_totals[c] = country_totals[c] + 1
+
+    # Build result for all active countries (even those with 0 contacts)
+    result_data = {}
+    for code in ACTIVE_COUNTRIES:
+        cfg = COUNTRY_CONFIG.get(code, {})
+        states_dict = country_state_counts.get(code, {})
+        states_list = [
+            {"state": s, "count": n}
+            for s, n in sorted(states_dict.items(), key=lambda x: -x[1])
+        ]
+        result_data[code] = {
+            "name": cfg.get("name", code),
+            "total": country_totals.get(code, 0),
+            "states": states_list,
+        }
+
+    # Sort countries by total count descending
+    result_data = dict(
+        sorted(result_data.items(), key=lambda x: -x[1]["total"])
+    )
+    return result_data
+
+
 def get_emails_per_state() -> list[dict]:
     """Get email count grouped by state."""
     client = get_client()
