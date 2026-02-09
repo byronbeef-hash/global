@@ -1,4 +1,4 @@
-"""Search engine discovery using DuckDuckGo via ddgs — DB-backed version."""
+"""Search engine discovery using DuckDuckGo via ddgs — DB-backed, multi-country version."""
 
 import asyncio
 import logging
@@ -9,7 +9,7 @@ from ddgs import DDGS
 from app.config import (
     SEARCH_TEMPLATES, SEARCH_TERMS, CATTLE_BREEDS,
     SEARCH_RESULTS_PER_QUERY, TOP_CATTLE_STATES,
-    SEARCH_RATE_LIMIT,
+    SEARCH_RATE_LIMIT, COUNTRY_CONFIG, get_country_config,
 )
 from app.db import queries as db
 
@@ -20,33 +20,60 @@ class SearchDiscovery:
     """Discover cattle farm URLs via search engine queries.
 
     DB-backed: skips already-executed queries, stores results in urls table.
+    Supports multi-country operation via country_code parameter.
     """
 
     def __init__(self):
         self.ddgs = DDGS()
 
-    def generate_queries(self, states: list[str] | None = None, max_queries: int | None = None) -> list[str]:
-        """Generate search queries from templates x terms x states."""
-        target_states = states or TOP_CATTLE_STATES
+    def generate_queries(
+        self,
+        states: list[str] | None = None,
+        max_queries: int | None = None,
+        country: str = "US",
+    ) -> list[str]:
+        """Generate search queries from templates x terms x regions.
+
+        Args:
+            states: Override regions. If None, uses top_regions for the country.
+            max_queries: Limit total queries.
+            country: Country code (US, NZ, UK, CA, AU).
+        """
+        config = get_country_config(country)
+        target_regions = states or config["top_regions"]
+        templates = config["search_templates"]
+        terms = config["search_terms"]
+        breeds = config["breeds"]
+
         queries = []
 
-        for state in target_states:
-            for template in SEARCH_TEMPLATES:
-                for term in SEARCH_TERMS:
-                    query = template.format(term=term, state=state, breed="angus")
+        for region in target_regions:
+            for template in templates:
+                for term in terms:
+                    query = template.format(
+                        term=term, region=region, breed="angus",
+                        # Legacy compat: {state} maps to {region}
+                        state=region,
+                    )
                     queries.append(query)
 
                 # Breed-specific queries
                 if "{breed}" in template:
-                    for breed in CATTLE_BREEDS[:10]:
-                        query = template.format(term=term, state=state, breed=breed)
+                    for breed in breeds[:10]:
+                        query = template.format(
+                            term=term, region=region, breed=breed,
+                            state=region,
+                        )
                         if query not in queries:
                             queries.append(query)
 
         if max_queries:
             queries = queries[:max_queries]
 
-        logger.info(f"Generated {len(queries)} search queries for {len(target_states)} states")
+        logger.info(
+            f"Generated {len(queries)} search queries for {len(target_regions)} "
+            f"regions in {config['name']} ({country})"
+        )
         return queries
 
     async def search(self, query: str, max_results: int = SEARCH_RESULTS_PER_QUERY) -> list[str]:
@@ -69,12 +96,13 @@ class SearchDiscovery:
         states: list[str] | None = None,
         max_queries: int | None = None,
         job_id: int | None = None,
+        country: str = "US",
     ) -> AsyncGenerator[tuple[list[str], str, int, int], None]:
         """Run queries, skip already-done ones, yield (urls, query, index, total).
 
         Each batch of results is yielded so the caller can store them.
         """
-        queries = self.generate_queries(states, max_queries)
+        queries = self.generate_queries(states, max_queries, country=country)
         total = len(queries)
 
         for i, query in enumerate(queries):
@@ -95,7 +123,8 @@ class SearchDiscovery:
 
             if urls:
                 logger.info(
-                    f"[{i+1}/{total}] Found {len(urls)} URLs for '{query[:50]}...'"
+                    f"[{i+1}/{total}] [{country}] Found {len(urls)} URLs "
+                    f"for '{query[:50]}...'"
                 )
                 yield urls, query, i, total
 
@@ -106,9 +135,10 @@ class SearchDiscovery:
         states: list[str] | None = None,
         max_queries: int | None = None,
         start_index: int = 0,
+        country: str = "US",
     ) -> list[str]:
         """Run all queries and collect unique URLs (non-DB fallback)."""
-        queries = self.generate_queries(states, max_queries)
+        queries = self.generate_queries(states, max_queries, country=country)
         all_urls: set[str] = set()
 
         for i, query in enumerate(queries[start_index:], start=start_index):
@@ -118,11 +148,14 @@ class SearchDiscovery:
 
             if new_urls:
                 logger.info(
-                    f"[{i+1}/{len(queries)}] Found {len(new_urls)} new URLs "
+                    f"[{i+1}/{len(queries)}] [{country}] Found {len(new_urls)} new URLs "
                     f"(total: {len(all_urls)})"
                 )
 
             await asyncio.sleep(SEARCH_RATE_LIMIT)
 
-        logger.info(f"Discovery complete: {len(all_urls)} unique URLs from {len(queries)} queries")
+        logger.info(
+            f"[{country}] Discovery complete: {len(all_urls)} unique URLs "
+            f"from {len(queries)} queries"
+        )
         return list(all_urls)

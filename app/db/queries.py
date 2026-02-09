@@ -30,6 +30,7 @@ def upsert_contact(record: dict) -> bool:
         "city": record.get("city", ""),
         "state": record.get("state", ""),
         "zip_code": record.get("zip_code", ""),
+        "country": record.get("country", "US"),
         "website": record.get("website", ""),
         "facebook": record.get("facebook", ""),
         "instagram": record.get("instagram", ""),
@@ -111,6 +112,23 @@ def get_all_contacts(limit: int = 100000) -> list[dict]:
     return all_data
 
 
+def get_emails_per_country() -> list[dict]:
+    """Get email count grouped by country."""
+    client = get_client()
+    try:
+        result = client.rpc("get_emails_per_country").execute()
+        return result.data or []
+    except Exception:
+        # Fallback: query manually
+        result = client.table("contacts").select("country").execute()
+        country_counts: dict[str, int] = {}
+        for row in result.data or []:
+            c = row.get("country", "US")
+            if c:
+                country_counts[c] = country_counts.get(c, 0) + 1
+        return [{"country": c, "count": n} for c, n in sorted(country_counts.items(), key=lambda x: -x[1])]
+
+
 def get_emails_per_state() -> list[dict]:
     """Get email count grouped by state."""
     client = get_client()
@@ -150,7 +168,7 @@ def get_dashboard_stats() -> dict:
 
 # ── URLs ──────────────────────────────────────────────────────────────
 
-def add_urls(urls: list[str], source: str = "", state: str = "", discovered_by: str = "") -> int:
+def add_urls(urls: list[str], source: str = "", state: str = "", discovered_by: str = "", country: str = "US") -> int:
     """Add discovered URLs to the queue. Returns number of new URLs added."""
     if not urls:
         return 0
@@ -168,6 +186,7 @@ def add_urls(urls: list[str], source: str = "", state: str = "", discovered_by: 
                 "source": source,
                 "state_target": state,
                 "discovered_by": discovered_by,
+                "country": country,
             }
             for url in batch
         ]
@@ -254,15 +273,21 @@ def get_url_count_by_status(status: str) -> int:
 
 # ── Jobs ──────────────────────────────────────────────────────────────
 
-def create_job(job_type: str, states: list[str], total_queries: int = 0) -> int:
-    """Create a new scrape job. Returns the job ID."""
+def create_job(job_type: str, states: list[str], total_queries: int = 0, country: str = "US") -> int:
+    """Create a new scrape job. Returns the job ID.
+
+    Country is stored in job_type as 'full:NZ' format for non-US countries.
+    """
     client = get_client()
-    result = client.table("scrape_jobs").insert({
-        "job_type": job_type,
+    # Encode country into job_type so we can read it back
+    encoded_type = f"{job_type}:{country}" if country != "US" else job_type
+    data = {
+        "job_type": encoded_type,
         "states": states,
         "status": "queued",
         "total_queries": total_queries,
-    }).execute()
+    }
+    result = client.table("scrape_jobs").insert(data).execute()
     return result.data[0]["id"]
 
 

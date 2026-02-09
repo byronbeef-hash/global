@@ -37,71 +37,262 @@ PLAYWRIGHT_TIMEOUT = 20000  # ms
 WORKER_BATCH_SIZE = int(os.environ.get("WORKER_BATCH_SIZE", "50"))
 WORKER_SLEEP_BETWEEN_JOBS = int(os.environ.get("WORKER_SLEEP_BETWEEN_JOBS", "60"))
 
-# === US States ===
-US_STATES = [
-    "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado",
-    "Connecticut", "Delaware", "Florida", "Georgia", "Hawaii", "Idaho",
-    "Illinois", "Indiana", "Iowa", "Kansas", "Kentucky", "Louisiana",
-    "Maine", "Maryland", "Massachusetts", "Michigan", "Minnesota",
-    "Mississippi", "Missouri", "Montana", "Nebraska", "Nevada",
-    "New Hampshire", "New Jersey", "New Mexico", "New York",
-    "North Carolina", "North Dakota", "Ohio", "Oklahoma", "Oregon",
-    "Pennsylvania", "Rhode Island", "South Carolina", "South Dakota",
-    "Tennessee", "Texas", "Utah", "Vermont", "Virginia", "Washington",
-    "West Virginia", "Wisconsin", "Wyoming",
-]
+# === Active Countries ===
+ACTIVE_COUNTRIES = os.environ.get("ACTIVE_COUNTRIES", "US,NZ,UK,CA,AU").split(",")
 
-TOP_CATTLE_STATES = [
-    "Texas", "Nebraska", "Kansas", "California", "Oklahoma",
-    "South Dakota", "Missouri", "Iowa", "Colorado", "Montana",
-    "North Dakota", "Idaho", "Wisconsin", "Minnesota", "Kentucky",
-    "Wyoming", "Florida", "Oregon", "Virginia", "Georgia",
-]
+# ============================================================================
+# COUNTRY-SPECIFIC CONFIGURATIONS
+# ============================================================================
 
-# === Search Query Templates ===
-SEARCH_TEMPLATES = [
-    "{term} {state} contact email",
-    "{term} {state} gmail",
-    "{term} {state} email address",
-    "{term} {state} contact us",
-    "{term} {state} contact information",
-    "registered {breed} breeder {state} contact",
-    "registered {breed} {state} email",
-    "{term} bulls for sale {state} email contact",
-    "{term} for sale {state} contact",
-]
+COUNTRY_CONFIG = {
+    # ---------- United States ----------
+    "US": {
+        "name": "United States",
+        "regions": [
+            "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado",
+            "Connecticut", "Delaware", "Florida", "Georgia", "Hawaii", "Idaho",
+            "Illinois", "Indiana", "Iowa", "Kansas", "Kentucky", "Louisiana",
+            "Maine", "Maryland", "Massachusetts", "Michigan", "Minnesota",
+            "Mississippi", "Missouri", "Montana", "Nebraska", "Nevada",
+            "New Hampshire", "New Jersey", "New Mexico", "New York",
+            "North Carolina", "North Dakota", "Ohio", "Oklahoma", "Oregon",
+            "Pennsylvania", "Rhode Island", "South Carolina", "South Dakota",
+            "Tennessee", "Texas", "Utah", "Vermont", "Virginia", "Washington",
+            "West Virginia", "Wisconsin", "Wyoming",
+        ],
+        "top_regions": [
+            "Texas", "Nebraska", "Kansas", "California", "Oklahoma",
+            "South Dakota", "Missouri", "Iowa", "Colorado", "Montana",
+            "North Dakota", "Idaho", "Wisconsin", "Minnesota", "Kentucky",
+            "Wyoming", "Florida", "Oregon", "Virginia", "Georgia",
+        ],
+        "search_terms": [
+            "cattle ranch", "cattle farm", "beef ranch", "beef cattle",
+            "dairy farm", "cow calf operation", "livestock ranch",
+            "angus ranch", "hereford ranch", "cattle breeder",
+            "cattle rancher", "beef producer", "cattle operation",
+        ],
+        "search_templates": [
+            "{term} {region} contact email",
+            "{term} {region} gmail",
+            "{term} {region} email address",
+            "{term} {region} contact us",
+            "{term} {region} contact information",
+            "registered {breed} breeder {region} contact",
+            "registered {breed} {region} email",
+            "{term} bulls for sale {region} email contact",
+            "{term} for sale {region} contact",
+        ],
+        "breeds": [
+            "angus", "hereford", "charolais", "simmental", "limousin",
+            "brahman", "shorthorn", "red angus", "gelbvieh", "maine-anjou",
+            "holstein", "jersey", "guernsey", "brown swiss", "ayrshire",
+            "longhorn", "highland", "wagyu", "brangus", "beefmaster",
+        ],
+        "directories": {
+            "yellowpages": "https://www.yellowpages.com/search",
+            "yelp": "https://www.yelp.com/search",
+        },
+    },
 
-SEARCH_TERMS = [
-    "cattle ranch",
-    "cattle farm",
-    "beef ranch",
-    "beef cattle",
-    "dairy farm",
-    "cow calf operation",
-    "livestock ranch",
-    "angus ranch",
-    "hereford ranch",
-    "cattle breeder",
-    "cattle rancher",
-    "beef producer",
-    "cattle operation",
-]
+    # ---------- New Zealand ----------
+    "NZ": {
+        "name": "New Zealand",
+        "regions": [
+            "Northland", "Auckland", "Waikato", "Bay of Plenty", "Gisborne",
+            "Hawkes Bay", "Taranaki", "Manawatu-Whanganui", "Wellington",
+            "Tasman", "Nelson", "Marlborough", "West Coast", "Canterbury",
+            "Otago", "Southland",
+        ],
+        "top_regions": [
+            "Waikato", "Canterbury", "Southland", "Otago", "Manawatu-Whanganui",
+            "Taranaki", "Hawkes Bay", "Bay of Plenty", "Northland", "Gisborne",
+        ],
+        "search_terms": [
+            "cattle farm", "beef farm", "dairy farm", "cattle station",
+            "cattle breeder", "beef breeder", "stud cattle",
+            "beef producer", "cattle farmer", "dairy farmer",
+            "livestock farm", "bull breeder", "cattle stud",
+        ],
+        "search_templates": [
+            "{term} {region} New Zealand contact email",
+            "{term} {region} NZ email",
+            "{term} {region} New Zealand contact",
+            "{term} New Zealand {region} email address",
+            "registered {breed} breeder {region} New Zealand",
+            "registered {breed} stud {region} NZ contact",
+            "{breed} cattle {region} New Zealand email",
+            "{term} for sale {region} New Zealand contact",
+            "cattle stud {region} NZ email",
+        ],
+        "breeds": [
+            "angus", "hereford", "charolais", "simmental", "limousin",
+            "shorthorn", "murray grey", "south devon", "red angus",
+            "highland", "wagyu", "speckle park", "lowline",
+            "jersey", "friesian", "ayrshire", "brown swiss",
+        ],
+        "directories": {
+            "yellowpages": "https://www.yellow.co.nz/search",
+        },
+    },
 
-CATTLE_BREEDS = [
-    "angus", "hereford", "charolais", "simmental", "limousin",
-    "brahman", "shorthorn", "red angus", "gelbvieh", "maine-anjou",
-    "holstein", "jersey", "guernsey", "brown swiss", "ayrshire",
-    "longhorn", "highland", "wagyu", "brangus", "beefmaster",
-]
+    # ---------- United Kingdom ----------
+    "UK": {
+        "name": "United Kingdom",
+        "regions": [
+            # England
+            "Devon", "Somerset", "Cornwall", "Dorset", "Wiltshire",
+            "Hampshire", "Kent", "Sussex", "Suffolk", "Norfolk",
+            "Lincolnshire", "Yorkshire", "Lancashire", "Cumbria",
+            "Northumberland", "Herefordshire", "Shropshire", "Staffordshire",
+            "Cheshire", "Gloucestershire", "Oxfordshire",
+            # Scotland
+            "Aberdeenshire", "Angus Scotland", "Perth and Kinross",
+            "Highland Scotland", "Dumfries and Galloway", "Scottish Borders",
+            "Fife", "Stirling",
+            # Wales
+            "Powys", "Carmarthenshire", "Pembrokeshire", "Ceredigion",
+            "Gwynedd", "Denbighshire",
+            # Northern Ireland
+            "County Antrim", "County Down", "County Tyrone",
+            "County Armagh", "County Fermanagh",
+        ],
+        "top_regions": [
+            "Devon", "Somerset", "Yorkshire", "Aberdeenshire", "Cumbria",
+            "Herefordshire", "Highland Scotland", "Dumfries and Galloway",
+            "Lincolnshire", "Norfolk", "Powys", "Shropshire",
+            "Lancashire", "Cornwall", "Dorset",
+        ],
+        "search_terms": [
+            "cattle farm", "beef farm", "dairy farm", "cattle breeder",
+            "beef breeder", "pedigree cattle", "cattle farmer",
+            "beef producer", "livestock farm", "cattle herd",
+            "pedigree herd", "bull breeder", "cattle stud",
+        ],
+        "search_templates": [
+            "{term} {region} UK contact email",
+            "{term} {region} England email",
+            "{term} {region} Scotland email",
+            "{term} {region} Wales email",
+            "{term} {region} contact email",
+            "pedigree {breed} breeder {region} UK contact",
+            "registered {breed} {region} UK email",
+            "{breed} cattle {region} UK email",
+            "{term} for sale {region} UK contact",
+        ],
+        "breeds": [
+            "angus", "aberdeen angus", "hereford", "charolais", "simmental",
+            "limousin", "shorthorn", "highland", "belted galloway",
+            "south devon", "red poll", "dexter", "welsh black",
+            "longhorn", "galloway", "british white", "lincoln red",
+            "jersey", "friesian", "ayrshire", "guernsey",
+        ],
+        "directories": {
+            "yellowpages": "https://www.yell.com/s/",
+        },
+    },
 
-# === Directory URLs ===
+    # ---------- Canada ----------
+    "CA": {
+        "name": "Canada",
+        "regions": [
+            "Alberta", "Saskatchewan", "Manitoba", "British Columbia",
+            "Ontario", "Quebec", "New Brunswick", "Nova Scotia",
+            "Prince Edward Island", "Newfoundland",
+        ],
+        "top_regions": [
+            "Alberta", "Saskatchewan", "Manitoba", "British Columbia",
+            "Ontario", "Quebec",
+        ],
+        "search_terms": [
+            "cattle ranch", "cattle farm", "beef ranch", "beef cattle",
+            "dairy farm", "cow calf operation", "livestock ranch",
+            "cattle breeder", "cattle rancher", "beef producer",
+            "cattle operation", "purebred cattle",
+        ],
+        "search_templates": [
+            "{term} {region} Canada contact email",
+            "{term} {region} Canada email",
+            "{term} {region} Canadian email address",
+            "{term} {region} Canada contact us",
+            "registered {breed} breeder {region} Canada contact",
+            "registered {breed} {region} Canada email",
+            "{breed} cattle {region} Canada email",
+            "{term} bulls for sale {region} Canada email",
+            "{term} for sale {region} Canada contact",
+        ],
+        "breeds": [
+            "angus", "hereford", "charolais", "simmental", "limousin",
+            "shorthorn", "red angus", "gelbvieh", "maine-anjou",
+            "highland", "wagyu", "speckle park", "piedmontese",
+            "blonde d'aquitaine", "salers",
+            "holstein", "jersey", "brown swiss", "ayrshire",
+        ],
+        "directories": {
+            "yellowpages": "https://www.yellowpages.ca/search",
+        },
+    },
+
+    # ---------- Australia ----------
+    "AU": {
+        "name": "Australia",
+        "regions": [
+            "New South Wales", "Queensland", "Victoria", "South Australia",
+            "Western Australia", "Tasmania", "Northern Territory",
+        ],
+        "top_regions": [
+            "Queensland", "New South Wales", "Victoria", "South Australia",
+            "Western Australia", "Tasmania",
+        ],
+        "search_terms": [
+            "cattle station", "cattle farm", "beef farm", "cattle property",
+            "cattle breeder", "beef producer", "cattle stud",
+            "beef breeder", "cattle farmer", "livestock farm",
+            "stud cattle", "bull breeder", "grazing property",
+        ],
+        "search_templates": [
+            "{term} {region} Australia contact email",
+            "{term} {region} Australia email",
+            "{term} {region} Australian email address",
+            "{term} {region} Australia contact",
+            "registered {breed} breeder {region} Australia contact",
+            "registered {breed} stud {region} Australia email",
+            "{breed} cattle {region} Australia email",
+            "{term} for sale {region} Australia contact",
+            "cattle stud {region} Australia email",
+        ],
+        "breeds": [
+            "angus", "hereford", "charolais", "simmental", "limousin",
+            "brahman", "shorthorn", "murray grey", "droughtmaster",
+            "santa gertrudis", "red angus", "belmont red", "brangus",
+            "wagyu", "speckle park", "south devon",
+            "holstein", "jersey", "illawarra", "ayrshire",
+        ],
+        "directories": {
+            "yellowpages": "https://www.yellowpages.com.au/find/",
+        },
+    },
+}
+
+
+# ============================================================================
+# BACKWARD-COMPATIBLE ALIASES (keep existing US code working)
+# ============================================================================
+
+US_STATES = COUNTRY_CONFIG["US"]["regions"]
+TOP_CATTLE_STATES = COUNTRY_CONFIG["US"]["top_regions"]
+SEARCH_TEMPLATES = COUNTRY_CONFIG["US"]["search_templates"]
+SEARCH_TERMS = COUNTRY_CONFIG["US"]["search_terms"]
+CATTLE_BREEDS = COUNTRY_CONFIG["US"]["breeds"]
+
+# === Directory URLs (US) ===
 YELLOWPAGES_BASE = "https://www.yellowpages.com/search"
 YELP_BASE = "https://www.yelp.com/search"
 
 # === CSV Fields ===
 CSV_FIELDS = [
     "farm_name", "owner_name", "email", "phone",
-    "address", "city", "state", "zip_code",
+    "address", "city", "state", "zip_code", "country",
     "website", "facebook", "instagram",
     "cattle_type", "breed", "head_count",
     "source_url", "scraped_date",
@@ -109,3 +300,13 @@ CSV_FIELDS = [
 
 # === Logging ===
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
+
+
+def get_country_config(country_code: str) -> dict:
+    """Get configuration for a specific country."""
+    return COUNTRY_CONFIG.get(country_code, COUNTRY_CONFIG["US"])
+
+
+def get_all_active_countries() -> list[str]:
+    """Get list of active country codes."""
+    return [c.strip() for c in ACTIVE_COUNTRIES if c.strip() in COUNTRY_CONFIG]

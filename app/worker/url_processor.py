@@ -23,7 +23,7 @@ class URLProcessor:
         self.contact_extractor = ContactExtractor()
         self.metadata_extractor = MetadataExtractor()
 
-    async def process(self, url: str) -> int:
+    async def process(self, url: str, country: str = "US") -> int:
         """Process a URL and store any contacts found.
 
         Returns the number of new emails saved.
@@ -75,7 +75,7 @@ class URLProcessor:
         metadata = self.metadata_extractor.extract(text)
 
         # Build records (one per email) and upsert
-        records = self._contact_to_records(contact, metadata)
+        records = self._contact_to_records(contact, metadata, country=country)
         saved = 0
         for record in records:
             if db.upsert_contact(record):
@@ -89,7 +89,7 @@ class URLProcessor:
         return saved
 
     @staticmethod
-    def _contact_to_records(contact: ContactInfo, metadata: dict) -> list[dict]:
+    def _contact_to_records(contact: ContactInfo, metadata: dict, country: str = "US") -> list[dict]:
         """Convert ContactInfo + metadata to flat dicts — one row per email."""
         base = {
             "farm_name": contact.farm_name,
@@ -99,6 +99,7 @@ class URLProcessor:
             "city": contact.city,
             "state": contact.state,
             "zip_code": contact.zip_code,
+            "country": country,
             "website": contact.website,
             "facebook": contact.facebook,
             "instagram": contact.instagram,

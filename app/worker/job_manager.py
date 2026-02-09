@@ -1,9 +1,9 @@
-"""Job creation and lifecycle management."""
+"""Job creation and lifecycle management (multi-country aware)."""
 
 import logging
 
 from app.db import queries as db
-from app.config import TOP_CATTLE_STATES, US_STATES
+from app.config import TOP_CATTLE_STATES, US_STATES, get_country_config
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +16,7 @@ class JobManager:
         job_type: str = "full",
         states: list[str] | None = None,
         total_queries: int = 0,
+        country: str = "US",
     ) -> int:
         """Create a new scrape job and return its ID."""
         target_states = states or TOP_CATTLE_STATES
@@ -23,10 +24,12 @@ class JobManager:
             job_type=job_type,
             states=target_states,
             total_queries=total_queries,
+            country=country,
         )
+        config = get_country_config(country)
         logger.info(
-            f"Created job {job_id}: type={job_type}, "
-            f"states={len(target_states)}, queries={total_queries}"
+            f"Created job {job_id}: type={job_type}, country={config['name']}, "
+            f"regions={len(target_states)}, queries={total_queries}"
         )
         return job_id
 
@@ -59,8 +62,21 @@ class JobManager:
         logger.info(f"Job {job_id} {status}" + (f": {error}" if error else ""))
 
     def get_next_job(self) -> dict | None:
-        """Get the next queued job to process."""
-        return db.get_next_queued_job()
+        """Get the next queued job to process.
+
+        Decodes country from the job_type field (e.g. 'full:NZ' -> country='NZ').
+        """
+        job = db.get_next_queued_job()
+        if job:
+            # Decode country from job_type
+            jt = job.get("job_type", "full")
+            if ":" in jt:
+                parts = jt.split(":", 1)
+                job["job_type"] = parts[0]
+                job["country"] = parts[1]
+            else:
+                job["country"] = "US"
+        return job
 
     def get_active_jobs(self) -> list[dict]:
         """Get all running/queued jobs."""
