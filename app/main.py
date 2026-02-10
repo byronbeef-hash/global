@@ -6,7 +6,6 @@ import sys
 import uvicorn
 
 from app.config import PORT, LOG_LEVEL
-from app.worker.orchestrator import Orchestrator
 
 logger = logging.getLogger("cattle_scraper")
 
@@ -46,8 +45,13 @@ async def run_dashboard() -> None:
 
 async def run_worker() -> None:
     """Run the background scraping worker with auto-restart on crash."""
+    # Wait for dashboard to start and pass healthcheck
+    await asyncio.sleep(15)
+
     while True:
         try:
+            # Lazy import to avoid blocking dashboard startup
+            from app.worker.orchestrator import Orchestrator
             orchestrator = Orchestrator()
             await orchestrator.run_forever()
         except Exception as e:

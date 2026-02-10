@@ -8,7 +8,6 @@ to complete first.
 import asyncio
 import logging
 import signal
-import sys
 
 from app.config import (
     MAX_CONCURRENT_REQUESTS, WORKER_BATCH_SIZE,
