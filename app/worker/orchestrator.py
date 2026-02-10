@@ -27,12 +27,12 @@ logger = logging.getLogger(__name__)
 class Orchestrator:
     """Main worker that continuously processes scrape jobs.
 
-    Supports multi-country operation. Each job can target a specific country.
+    Supports multi-country operation. Runs ALL country jobs concurrently.
 
     Lifecycle:
-        1. Check for queued jobs
-        2. If a job exists: run discovery → process URLs → mark complete
-        3. If no jobs: auto-create jobs for active countries, then sleep
+        1. Auto-create jobs for all active countries
+        2. Run all jobs concurrently (one per country)
+        3. When all finish, sleep and repeat
         4. Handle graceful shutdown on SIGTERM
     """
 
@@ -47,33 +47,33 @@ class Orchestrator:
         self._shutdown = False
 
     async def run_forever(self) -> None:
-        """Main loop: pick jobs, execute them, repeat."""
+        """Main loop: gather all queued jobs, run concurrently, repeat."""
         # Set up graceful shutdown
         loop = asyncio.get_event_loop()
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.add_signal_handler(sig, self._handle_shutdown)
 
-        logger.info("Orchestrator started — multi-country mode")
+        logger.info("Orchestrator started — multi-country CONCURRENT mode")
         logger.info(f"Active countries: {get_all_active_countries()}")
 
-        # Recovery from prior crash/restart
-        try:
-            stuck = db.reset_stuck_urls()
-            if stuck:
-                logger.info(f"Reset {stuck} stuck 'processing' URLs to 'pending'")
-            orphaned = db.reset_orphaned_jobs()
-            if orphaned:
-                logger.info(f"Reset {orphaned} orphaned 'running' jobs to 'failed'")
-        except Exception as e:
-            logger.warning(f"Startup recovery error: {e}")
+        # Run crash recovery in background (non-blocking so healthcheck passes)
+        asyncio.create_task(self._startup_recovery())
 
         while not self._shutdown:
             try:
-                # Check for queued jobs
-                job = self.job_manager.get_next_job()
+                # Collect ALL queued jobs
+                jobs = []
+                while True:
+                    job = self.job_manager.get_next_job()
+                    if not job:
+                        break
+                    jobs.append(job)
 
-                if job:
-                    await self._execute_job(job)
+                if jobs:
+                    # Run all queued jobs concurrently
+                    logger.info(f"Running {len(jobs)} jobs concurrently")
+                    tasks = [self._execute_job(job) for job in jobs]
+                    await asyncio.gather(*tasks, return_exceptions=True)
                 else:
                     # Auto-create jobs for each active country
                     created = self._auto_create_jobs()
@@ -89,6 +89,19 @@ class Orchestrator:
 
         logger.info("Orchestrator shutting down gracefully")
         await self.fetcher.close()
+
+    async def _startup_recovery(self) -> None:
+        """Reset stuck URLs and orphaned jobs from prior crash/restart."""
+        try:
+            await asyncio.sleep(5)
+            stuck = db.reset_stuck_urls()
+            if stuck:
+                logger.info(f"Recovery: reset {stuck} stuck 'processing' URLs to 'pending'")
+            orphaned = db.reset_orphaned_jobs()
+            if orphaned:
+                logger.info(f"Recovery: reset {orphaned} orphaned 'running' jobs to 'failed'")
+        except Exception as e:
+            logger.warning(f"Startup recovery error: {e}")
 
     def _auto_create_jobs(self) -> bool:
         """Auto-create full scrape jobs for each active country.
@@ -247,7 +260,15 @@ class Orchestrator:
 
             async def process_one(url: str) -> int:
                 async with sem:
-                    return await self.processor.process(url, country=country)
+                    try:
+                        return await self.processor.process(url, country=country)
+                    except Exception as e:
+                        logger.error(f"process_one error for {url}: {e}")
+                        try:
+                            db.mark_url_done(url, emails_found=0, error=str(e)[:200])
+                        except Exception:
+                            pass
+                        return 0
 
             # Process batch concurrently
             tasks = [process_one(url) for url in pending]
