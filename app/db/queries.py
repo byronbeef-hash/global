@@ -356,21 +356,6 @@ def is_url_seen(url: str) -> bool:
     return bool(result.data)
 
 
-def is_url_completed(url: str) -> bool:
-    """Check if a URL has already been fully processed (completed or failed)."""
-    client = get_client()
-    result = (
-        client.table("urls")
-        .select("status")
-        .eq("url", url)
-        .limit(1)
-        .execute()
-    )
-    if not result.data:
-        return False
-    return result.data[0].get("status") in ("completed", "failed")
-
-
 def get_url_count() -> int:
     """Get total URL count."""
     client = get_client()
