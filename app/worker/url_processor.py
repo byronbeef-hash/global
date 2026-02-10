@@ -32,8 +32,8 @@ class URLProcessor:
 
         Returns the number of new emails saved.
         """
-        # Check if already processed
-        if db.is_url_seen(url):
+        # Skip if already completed or failed (avoid re-processing)
+        if db.is_url_completed(url):
             return 0
 
         # Check if we already have a contact from this exact source_url
