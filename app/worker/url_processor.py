@@ -99,15 +99,42 @@ class URLProcessor:
         return saved
 
     @staticmethod
+    def _validate_state(state: str, country: str) -> str:
+        """Validate extracted state belongs to the country. Clear if mismatch."""
+        if not state:
+            return ""
+
+        from app.config import COUNTRY_CONFIG
+        config = COUNTRY_CONFIG.get(country, {})
+        regions = config.get("regions", [])
+
+        if not regions:
+            return state
+
+        # Check if state matches a known region (case-insensitive)
+        state_lower = state.lower().strip()
+        for region in regions:
+            if state_lower == region.lower():
+                return region  # Return canonical name
+
+        # For non-US countries, a 2-letter code is almost certainly a US state
+        if country != "US" and len(state) == 2 and state.isalpha():
+            return ""
+
+        return state
+
+    @staticmethod
     def _contact_to_records(contact: ContactInfo, metadata: dict, country: str = "US") -> list[dict]:
         """Convert ContactInfo + metadata to flat dicts — one row per email."""
+        validated_state = URLProcessor._validate_state(contact.state, country)
+
         base = {
             "farm_name": contact.farm_name,
             "owner_name": contact.owner_name,
             "phone": contact.phones[0] if contact.phones else "",
             "address": contact.address,
             "city": contact.city,
-            "state": contact.state,
+            "state": validated_state,
             "zip_code": contact.zip_code,
             "country": country,
             "website": contact.website,

@@ -77,6 +77,23 @@ class AssociationCrawler:
         self.country = country
         self._inline_emails_saved = 0
 
+        # Cache country regions for state validation
+        from app.config import COUNTRY_CONFIG
+        config = COUNTRY_CONFIG.get(country, {})
+        self._valid_regions = [r.lower() for r in config.get("regions", [])]
+
+    def _validate_state(self, state: str) -> str:
+        """Validate state belongs to this country. Clear if mismatch."""
+        if not state:
+            return ""
+        if self._valid_regions:
+            if state.lower().strip() in self._valid_regions:
+                return state
+            # 2-letter code for non-US country is almost certainly a US state
+            if self.country != "US" and len(state) == 2 and state.isalpha():
+                return ""
+        return state
+
     async def crawl_breed_associations(self) -> list[str]:
         """Crawl breed association 'Find a Breeder' pages."""
         all_urls = []
@@ -149,6 +166,10 @@ class AssociationCrawler:
         # Use the full ContactExtractor for thorough extraction
         contact = self.contact_extractor.extract(html, source_url)
 
+        # Validate state belongs to this country
+        raw_state = state or contact.state
+        validated_state = self._validate_state(raw_state)
+
         saved = 0
         for email in contact.emails:
             record = {
@@ -158,7 +179,7 @@ class AssociationCrawler:
                 "phone": contact.phones[0] if contact.phones else "",
                 "address": contact.address,
                 "city": contact.city,
-                "state": state or contact.state,
+                "state": validated_state,
                 "zip_code": contact.zip_code,
                 "country": self.country,
                 "website": contact.website,
