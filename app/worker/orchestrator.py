@@ -1,4 +1,9 @@
-"""Main worker orchestrator — runs the 24/7 scraping loop (multi-country)."""
+"""Main worker orchestrator — runs the 24/7 scraping loop (multi-country).
+
+Key design: interleaves URL discovery with email extraction so that
+emails start flowing immediately rather than waiting for all discovery
+to complete first.
+"""
 
 import asyncio
 import logging
@@ -23,17 +28,19 @@ from app.discovery.association_crawler import AssociationCrawler
 
 logger = logging.getLogger(__name__)
 
+# How many search queries to run before pausing to process URLs
+DISCOVERY_BATCH_SIZE = 10
+# How many URL batches to process between discovery batches
+PROCESS_BATCHES_PER_CYCLE = 3
+
 
 class Orchestrator:
     """Main worker that continuously processes scrape jobs.
 
     Supports multi-country operation. Each job can target a specific country.
 
-    Lifecycle:
-        1. Check for queued jobs
-        2. If a job exists: run discovery → process URLs → mark complete
-        3. If no jobs: auto-create jobs for active countries, then sleep
-        4. Handle graceful shutdown on SIGTERM
+    Key improvement: interleaves discovery and processing so emails flow
+    from the very first minutes of operation, not after hours of discovery.
     """
 
     def __init__(self):
@@ -48,7 +55,6 @@ class Orchestrator:
 
     async def run_forever(self) -> None:
         """Main loop: pick jobs, execute them, repeat."""
-        # Set up graceful shutdown
         loop = asyncio.get_event_loop()
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.add_signal_handler(sig, self._handle_shutdown)
@@ -56,15 +62,24 @@ class Orchestrator:
         logger.info("Orchestrator started — multi-country mode")
         logger.info(f"Active countries: {get_all_active_countries()}")
 
+        # Crash recovery: reset any URLs stuck in 'processing'
+        self._recover_stuck_urls()
+
         while not self._shutdown:
             try:
-                # Check for queued jobs
                 job = self.job_manager.get_next_job()
 
                 if job:
                     await self._execute_job(job)
                 else:
-                    # Auto-create jobs for each active country
+                    # Before creating new jobs, process any pending URLs first
+                    pending_count = db.get_url_count_by_status("pending")
+                    if pending_count > 0:
+                        logger.info(
+                            f"Found {pending_count} pending URLs — processing before new jobs"
+                        )
+                        await self._process_pending_urls(job_id=0, country="US")
+
                     created = self._auto_create_jobs()
                     if not created:
                         logger.debug(
@@ -79,11 +94,25 @@ class Orchestrator:
         logger.info("Orchestrator shutting down gracefully")
         await self.fetcher.close()
 
-    def _auto_create_jobs(self) -> bool:
-        """Auto-create full scrape jobs for each active country.
+    def _recover_stuck_urls(self) -> None:
+        """Reset URLs stuck in 'processing' from a previous crash/restart."""
+        try:
+            from app.db.supabase_client import get_client
+            client = get_client()
+            result = (
+                client.table("urls")
+                .update({"status": "pending"})
+                .eq("status", "processing")
+                .execute()
+            )
+            count = len(result.data) if result.data else 0
+            if count:
+                logger.info(f"Crash recovery: reset {count} stuck URLs to pending")
+        except Exception as e:
+            logger.error(f"Failed to recover stuck URLs: {e}")
 
-        Returns True if any jobs were created.
-        """
+    def _auto_create_jobs(self) -> bool:
+        """Auto-create full scrape jobs for each active country."""
         countries = get_all_active_countries()
         created = False
 
@@ -91,7 +120,6 @@ class Orchestrator:
             config = get_country_config(country_code)
             regions = config["top_regions"]
 
-            # Create a full scrape job for this country
             queries = self.search.generate_queries(
                 states=regions, country=country_code
             )
@@ -111,11 +139,10 @@ class Orchestrator:
         return created
 
     async def _execute_job(self, job: dict) -> None:
-        """Execute a single scrape job through all phases."""
+        """Execute a single scrape job — interleaving discovery and processing."""
         job_id = job["id"]
         job_type = job["job_type"]
         states = job.get("states", TOP_CATTLE_STATES)
-        # Extract country from job metadata; default to US
         country = job.get("country", "US")
 
         config = get_country_config(country)
@@ -126,23 +153,27 @@ class Orchestrator:
         self.job_manager.start_job(job_id)
 
         try:
-            # Phase 1: Discovery
+            # Phase 1+2 interleaved: discover some URLs, then process some, repeat
             if job_type in ("full", "search"):
-                await self._run_search_discovery(job_id, states, country)
+                await self._run_search_with_processing(job_id, states, country)
 
+            if self._shutdown:
+                return
+
+            # Run associations (with inline email extraction)
             if job_type in ("full", "associations"):
                 await self._run_association_discovery(job_id, states, country)
 
             if self._shutdown:
                 return
 
-            # Phase 2: Process discovered URLs
+            # Process any remaining pending URLs
             await self._process_pending_urls(job_id, country)
 
             if self._shutdown:
                 return
 
-            # Phase 3: Directory crawling (all countries with YellowPages)
+            # Phase 3: Directory crawling
             if job_type in ("full", "directories"):
                 await self._run_directory_crawlers(job_id, states, country)
 
@@ -152,26 +183,36 @@ class Orchestrator:
             logger.error(f"Job {job_id} failed: {e}", exc_info=True)
             self.job_manager.complete_job(job_id, error=str(e))
 
-    async def _run_search_discovery(
+    async def _run_search_with_processing(
         self, job_id: int, states: list[str], country: str = "US"
     ) -> None:
-        """Phase 1a: Discover URLs via search engine queries."""
+        """Interleaved search discovery + URL processing.
+
+        After every DISCOVERY_BATCH_SIZE search queries, pause and process
+        a few batches of pending URLs. This ensures emails flow from the
+        very beginning rather than waiting for all discovery to finish.
+        """
         config = get_country_config(country)
-        logger.info(f"[Job {job_id}] Phase 1a: Search discovery ({config['name']})")
+        logger.info(
+            f"[Job {job_id}] Interleaved discovery+processing ({config['name']})"
+        )
 
         total_discovered = 0
+        total_emails = 0
+        queries_since_processing = 0
+
         async for urls, query, query_idx, total_queries in self.search.discover_urls_db(
             states=states,
             job_id=job_id,
             country=country,
         ):
-            # Add URLs to queue with country tag
             added = db.add_urls(
                 urls, source="search",
                 state=states[0] if len(states) == 1 else "",
                 country=country,
             )
             total_discovered += added
+            queries_since_processing += 1
 
             self.job_manager.update_progress(
                 job_id,
@@ -179,23 +220,66 @@ class Orchestrator:
                 urls_discovered=total_discovered,
             )
 
+            # Every N queries, pause discovery and process pending URLs
+            if queries_since_processing >= DISCOVERY_BATCH_SIZE:
+                emails = await self._process_url_batches(
+                    job_id, country, max_batches=PROCESS_BATCHES_PER_CYCLE,
+                )
+                total_emails += emails
+                queries_since_processing = 0
+
             if self._shutdown:
                 return
 
         logger.info(
-            f"[Job {job_id}] Search discovery complete: "
-            f"{total_discovered} URLs ({config['name']})"
+            f"[Job {job_id}] Search complete: {total_discovered} URLs, "
+            f"{total_emails} emails so far ({config['name']})"
         )
+
+    async def _process_url_batches(
+        self, job_id: int, country: str, max_batches: int = 3,
+    ) -> int:
+        """Process a limited number of URL batches. Returns emails saved."""
+        total_emails = 0
+        sem = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
+
+        for _ in range(max_batches):
+            pending = db.get_pending_urls(limit=WORKER_BATCH_SIZE)
+            if not pending:
+                break
+
+            async def process_one(url: str) -> int:
+                async with sem:
+                    return await self.processor.process(url, country=country)
+
+            tasks = [process_one(url) for url in pending]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            batch_emails = 0
+            for r in results:
+                if isinstance(r, int):
+                    batch_emails += r
+                elif isinstance(r, Exception):
+                    logger.error(f"URL processing error: {r}")
+
+            total_emails += batch_emails
+
+            if batch_emails:
+                logger.info(
+                    f"[Job {job_id}] Processed {len(pending)} URLs, "
+                    f"found {batch_emails} emails"
+                )
+
+            if self._shutdown:
+                break
+
+        return total_emails
 
     async def _run_association_discovery(
         self, job_id: int, states: list[str], country: str = "US"
     ) -> None:
-        """Phase 1b: Discover URLs from association directories.
-
-        Now also extracts emails inline from every page fetched, so
-        contacts are saved immediately rather than waiting for Phase 2.
-        """
-        logger.info(f"[Job {job_id}] Phase 1b: Association discovery")
+        """Discover URLs from association directories (with inline email extraction)."""
+        logger.info(f"[Job {job_id}] Association discovery")
 
         crawler = AssociationCrawler(self.fetcher, country=country)
         urls = await crawler.crawl_all(states)
@@ -213,15 +297,18 @@ class Orchestrator:
     async def _process_pending_urls(
         self, job_id: int, country: str = "US"
     ) -> None:
-        """Phase 2: Process all pending URLs in the queue."""
-        logger.info(f"[Job {job_id}] Phase 2: Processing pending URLs")
+        """Process ALL pending URLs in the queue."""
+        pending_count = db.get_url_count_by_status("pending")
+        if not pending_count:
+            return
+
+        logger.info(f"[Job {job_id}] Processing {pending_count} pending URLs")
 
         total_processed = 0
         total_emails = 0
         sem = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
         while not self._shutdown:
-            # Get next batch
             pending = db.get_pending_urls(limit=WORKER_BATCH_SIZE)
             if not pending:
                 break
@@ -230,7 +317,6 @@ class Orchestrator:
                 async with sem:
                     return await self.processor.process(url, country=country)
 
-            # Process batch concurrently
             tasks = [process_one(url) for url in pending]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -244,14 +330,15 @@ class Orchestrator:
             total_processed += len(pending)
             total_emails += batch_emails
 
-            self.job_manager.update_progress(
-                job_id,
-                urls_processed=total_processed,
-                emails_found=total_emails,
-            )
+            if job_id:
+                self.job_manager.update_progress(
+                    job_id,
+                    urls_processed=total_processed,
+                    emails_found=total_emails,
+                )
 
             logger.info(
-                f"[Job {job_id}] Progress: {total_processed} URLs processed, "
+                f"[Job {job_id}] Processed {total_processed} URLs, "
                 f"{total_emails} emails saved"
             )
 
@@ -263,21 +350,14 @@ class Orchestrator:
     async def _run_directory_crawlers(
         self, job_id: int, states: list[str], country: str = "US"
     ) -> None:
-        """Phase 3: Run directory crawlers for direct extraction.
-
-        YellowPages runs for all countries. Yelp and Manta only run for US.
-        """
+        """Run directory crawlers for direct contact extraction."""
         config = get_country_config(country)
-        logger.info(
-            f"[Job {job_id}] Phase 3: Directory crawlers ({config['name']})"
-        )
+        logger.info(f"[Job {job_id}] Directory crawlers ({config['name']})")
 
-        # YellowPages runs for ALL countries (country-specific URLs)
-        crawlers: list[tuple[str, DirectoryCrawler]] = [
+        crawlers = [
             (f"YellowPages-{country}", YellowPagesCrawler(self.fetcher, country=country)),
         ]
 
-        # Yelp and Manta only available for US
         if country == "US":
             crawlers.append(("Yelp", YelpCrawler(self.fetcher)))
             crawlers.append(("Manta", MantaCrawler(self.fetcher)))

@@ -302,6 +302,21 @@ def add_urls(urls: list[str], source: str = "", state: str = "", discovered_by: 
     return added
 
 
+def get_url_count_by_status(status: str) -> int:
+    """Get count of URLs with a given status."""
+    client = get_client()
+    try:
+        result = (
+            client.table("urls")
+            .select("id", count="exact")
+            .eq("status", status)
+            .execute()
+        )
+        return result.count or 0
+    except Exception:
+        return 0
+
+
 def get_pending_urls(limit: int = 50) -> list[str]:
     """Get next batch of pending URLs to process."""
     client = get_client()
