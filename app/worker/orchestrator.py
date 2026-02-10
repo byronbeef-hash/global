@@ -56,16 +56,8 @@ class Orchestrator:
         logger.info("Orchestrator started — multi-country mode")
         logger.info(f"Active countries: {get_all_active_countries()}")
 
-        # Recovery from prior crash/restart
-        try:
-            stuck = db.reset_stuck_urls()
-            if stuck:
-                logger.info(f"Reset {stuck} stuck 'processing' URLs to 'pending'")
-            orphaned = db.reset_orphaned_jobs()
-            if orphaned:
-                logger.info(f"Reset {orphaned} orphaned 'running' jobs to 'failed'")
-        except Exception as e:
-            logger.warning(f"Startup recovery error: {e}")
+        # Recovery from prior crash/restart (run in background to not block startup)
+        asyncio.create_task(self._startup_recovery())
 
         while not self._shutdown:
             try:
@@ -328,6 +320,18 @@ class Orchestrator:
                 logger.info(f"[Job {job_id}] {name}: saved {saved} contacts")
             except Exception as e:
                 logger.error(f"[Job {job_id}] {name} crawler failed: {e}")
+
+    async def _startup_recovery(self) -> None:
+        """Reset stuck URLs and orphaned jobs from prior crash/restart."""
+        try:
+            stuck = db.reset_stuck_urls()
+            if stuck:
+                logger.info(f"Recovery: reset {stuck} stuck 'processing' URLs")
+            orphaned = db.reset_orphaned_jobs()
+            if orphaned:
+                logger.info(f"Recovery: reset {orphaned} orphaned 'running' jobs")
+        except Exception as e:
+            logger.warning(f"Startup recovery error: {e}")
 
     def _handle_shutdown(self) -> None:
         """Handle SIGTERM/SIGINT for graceful shutdown."""
