@@ -45,9 +45,15 @@ async def run_dashboard() -> None:
 
 
 async def run_worker() -> None:
-    """Run the background scraping worker."""
-    orchestrator = Orchestrator()
-    await orchestrator.run_forever()
+    """Run the background scraping worker with auto-restart on crash."""
+    while True:
+        try:
+            orchestrator = Orchestrator()
+            await orchestrator.run_forever()
+        except Exception as e:
+            logger.error(f"Worker crashed: {e}", exc_info=True)
+            logger.info("Restarting worker in 30 seconds...")
+            await asyncio.sleep(30)
 
 
 async def main() -> None:
@@ -56,6 +62,7 @@ async def main() -> None:
     logger.info(f"Starting Cattle Scraper Production on port {PORT}")
 
     # Run dashboard and worker in parallel
+    # Worker has its own restart loop so it won't crash the dashboard
     await asyncio.gather(
         run_dashboard(),
         run_worker(),

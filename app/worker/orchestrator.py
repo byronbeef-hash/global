@@ -95,19 +95,39 @@ class Orchestrator:
         await self.fetcher.close()
 
     def _recover_stuck_urls(self) -> None:
-        """Reset URLs stuck in 'processing' from a previous crash/restart."""
+        """Reset URLs stuck in 'processing' from a previous crash/restart.
+
+        Processes in batches to avoid Supabase response size limits.
+        """
         try:
             from app.db.supabase_client import get_client
             client = get_client()
-            result = (
-                client.table("urls")
-                .update({"status": "pending"})
-                .eq("status", "processing")
-                .execute()
-            )
-            count = len(result.data) if result.data else 0
-            if count:
-                logger.info(f"Crash recovery: reset {count} stuck URLs to pending")
+            total_reset = 0
+
+            while True:
+                # Get a batch of stuck URLs
+                stuck = (
+                    client.table("urls")
+                    .select("url")
+                    .eq("status", "processing")
+                    .limit(500)
+                    .execute()
+                )
+                if not stuck.data:
+                    break
+
+                # Reset them one batch at a time
+                for row in stuck.data:
+                    try:
+                        client.table("urls").update(
+                            {"status": "pending"}
+                        ).eq("url", row["url"]).execute()
+                        total_reset += 1
+                    except Exception:
+                        pass
+
+            if total_reset:
+                logger.info(f"Crash recovery: reset {total_reset} stuck URLs to pending")
         except Exception as e:
             logger.error(f"Failed to recover stuck URLs: {e}")
 
