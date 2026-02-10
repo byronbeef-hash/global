@@ -86,12 +86,18 @@ class AssociationCrawler:
         """Validate state belongs to this country. Clear if mismatch."""
         if not state:
             return ""
+        state_lower = state.lower().strip()
         if self._valid_regions:
-            if state.lower().strip() in self._valid_regions:
+            if state_lower in self._valid_regions:
                 return state
-            # 2-letter code for non-US country is almost certainly a US state
-            if self.country != "US" and len(state) == 2 and state.isalpha():
-                return ""
+            # For non-US countries, reject US state abbreviations and names
+            if self.country != "US":
+                if len(state) == 2 and state.isalpha():
+                    return ""
+                from app.config import COUNTRY_CONFIG
+                us_regions = [r.lower() for r in COUNTRY_CONFIG.get("US", {}).get("regions", [])]
+                if state_lower in us_regions:
+                    return ""
         return state
 
     async def crawl_breed_associations(self) -> list[str]:

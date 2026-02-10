@@ -117,9 +117,15 @@ class URLProcessor:
             if state_lower == region.lower():
                 return region  # Return canonical name
 
-        # For non-US countries, a 2-letter code is almost certainly a US state
-        if country != "US" and len(state) == 2 and state.isalpha():
-            return ""
+        # For non-US countries, reject if it looks like a US state
+        if country != "US":
+            # 2-letter code is almost certainly a US state abbreviation
+            if len(state) == 2 and state.isalpha():
+                return ""
+            # Also check full US state names
+            us_regions = [r.lower() for r in COUNTRY_CONFIG.get("US", {}).get("regions", [])]
+            if state_lower in us_regions:
+                return ""
 
         return state
 
