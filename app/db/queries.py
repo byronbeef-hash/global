@@ -302,21 +302,6 @@ def add_urls(urls: list[str], source: str = "", state: str = "", discovered_by: 
     return added
 
 
-def get_url_count_by_status(status: str) -> int:
-    """Get count of URLs with a given status."""
-    client = get_client()
-    try:
-        result = (
-            client.table("urls")
-            .select("id", count="exact")
-            .eq("status", status)
-            .execute()
-        )
-        return result.count or 0
-    except Exception:
-        return 0
-
-
 def get_pending_urls(limit: int = 50) -> list[str]:
     """Get next batch of pending URLs to process."""
     client = get_client()
@@ -383,6 +368,42 @@ def get_url_count_by_status(status: str) -> int:
     client = get_client()
     result = client.table("urls").select("id", count="exact").eq("status", status).execute()
     return result.count or 0
+
+
+def reset_stuck_urls() -> int:
+    """Reset URLs stuck in 'processing' back to 'pending'.
+
+    Called on startup to recover from prior crashes/restarts.
+    Processes in batches to avoid OOM on large result sets.
+    Returns total number of URLs reset.
+    """
+    client = get_client()
+    total_reset = 0
+
+    while True:
+        # Fetch a batch of stuck URLs
+        result = (
+            client.table("urls")
+            .select("id")
+            .eq("status", "processing")
+            .limit(200)
+            .execute()
+        )
+        ids = [row["id"] for row in (result.data or [])]
+        if not ids:
+            break
+
+        # Reset each batch
+        try:
+            client.table("urls").update(
+                {"status": "pending"}
+            ).in_("id", ids).execute()
+            total_reset += len(ids)
+        except Exception as e:
+            logger.error(f"Failed to reset stuck URLs batch: {e}")
+            break
+
+    return total_reset
 
 
 # ── Jobs ──────────────────────────────────────────────────────────────
@@ -481,6 +502,25 @@ def get_job_count_by_status(status: str) -> int:
     client = get_client()
     result = client.table("scrape_jobs").select("id", count="exact").eq("status", status).execute()
     return result.count or 0
+
+
+def reset_orphaned_jobs() -> int:
+    """Reset jobs stuck in 'running' to 'failed' on startup.
+
+    Returns the number of jobs reset.
+    """
+    client = get_client()
+    try:
+        result = (
+            client.table("scrape_jobs")
+            .update({"status": "failed", "error": "orphaned by restart"})
+            .eq("status", "running")
+            .execute()
+        )
+        return len(result.data) if result.data else 0
+    except Exception as e:
+        logger.error(f"Failed to reset orphaned jobs: {e}")
+        return 0
 
 
 def get_next_queued_job() -> dict | None:
