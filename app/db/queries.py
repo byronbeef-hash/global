@@ -552,6 +552,19 @@ def get_next_queued_job() -> dict | None:
     return result.data[0] if result.data else None
 
 
+def get_all_queued_jobs() -> list[dict]:
+    """Get all queued jobs, ordered by creation time."""
+    client = get_client()
+    result = (
+        client.table("scrape_jobs")
+        .select("*")
+        .eq("status", "queued")
+        .order("created_at")
+        .execute()
+    )
+    return result.data or []
+
+
 # ── Search Queries ────────────────────────────────────────────────────
 
 def mark_query_done(query: str, results_count: int, urls_found: int, job_id: int | None = None) -> None:

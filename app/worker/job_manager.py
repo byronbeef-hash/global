@@ -68,15 +68,26 @@ class JobManager:
         """
         job = db.get_next_queued_job()
         if job:
-            # Decode country from job_type
-            jt = job.get("job_type", "full")
-            if ":" in jt:
-                parts = jt.split(":", 1)
-                job["job_type"] = parts[0]
-                job["country"] = parts[1]
-            else:
-                job["country"] = "US"
+            self._decode_country(job)
         return job
+
+    def get_all_queued_jobs(self) -> list[dict]:
+        """Get all queued jobs at once for concurrent execution."""
+        jobs = db.get_all_queued_jobs()
+        for job in jobs:
+            self._decode_country(job)
+        return jobs
+
+    @staticmethod
+    def _decode_country(job: dict) -> None:
+        """Decode country from job_type field (e.g. 'full:NZ' -> country='NZ')."""
+        jt = job.get("job_type", "full")
+        if ":" in jt:
+            parts = jt.split(":", 1)
+            job["job_type"] = parts[0]
+            job["country"] = parts[1]
+        else:
+            job["country"] = "US"
 
     def get_active_jobs(self) -> list[dict]:
         """Get all running/queued jobs."""

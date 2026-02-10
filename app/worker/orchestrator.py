@@ -56,18 +56,14 @@ class Orchestrator:
         logger.info("Orchestrator started — multi-country CONCURRENT mode")
         logger.info(f"Active countries: {get_all_active_countries()}")
 
-        # Run crash recovery in background (non-blocking so healthcheck passes)
+        # Run crash recovery in a thread so it doesn't block the event loop
+        # (synchronous Supabase calls would otherwise starve the healthcheck)
         asyncio.create_task(self._startup_recovery())
 
         while not self._shutdown:
             try:
-                # Collect ALL queued jobs
-                jobs = []
-                while True:
-                    job = self.job_manager.get_next_job()
-                    if not job:
-                        break
-                    jobs.append(job)
+                # Get ALL queued jobs in a single query
+                jobs = self.job_manager.get_all_queued_jobs()
 
                 if jobs:
                     # Run all queued jobs concurrently
@@ -91,13 +87,17 @@ class Orchestrator:
         await self.fetcher.close()
 
     async def _startup_recovery(self) -> None:
-        """Reset stuck URLs and orphaned jobs from prior crash/restart."""
+        """Reset stuck URLs and orphaned jobs from prior crash/restart.
+
+        Runs in background so healthcheck can pass immediately.
+        Uses asyncio.to_thread for the blocking Supabase calls.
+        """
         try:
             await asyncio.sleep(5)
-            stuck = db.reset_stuck_urls()
+            stuck = await asyncio.to_thread(db.reset_stuck_urls)
             if stuck:
                 logger.info(f"Recovery: reset {stuck} stuck 'processing' URLs to 'pending'")
-            orphaned = db.reset_orphaned_jobs()
+            orphaned = await asyncio.to_thread(db.reset_orphaned_jobs)
             if orphaned:
                 logger.info(f"Recovery: reset {orphaned} orphaned 'running' jobs to 'failed'")
         except Exception as e:
