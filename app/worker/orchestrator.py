@@ -59,6 +59,10 @@ class Orchestrator:
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.add_signal_handler(sig, self._handle_shutdown)
 
+        # Wait 10s for dashboard to start and pass healthcheck first
+        logger.info("Worker waiting 10s for dashboard startup...")
+        await asyncio.sleep(10)
+
         logger.info("Orchestrator started — multi-country mode")
         logger.info(f"Active countries: {get_all_active_countries()}")
 
@@ -95,39 +99,44 @@ class Orchestrator:
         await self.fetcher.close()
 
     def _recover_stuck_urls(self) -> None:
-        """Reset URLs stuck in 'processing' from a previous crash/restart.
-
-        Processes in batches to avoid Supabase response size limits.
-        """
+        """Reset URLs stuck in 'processing' from a previous crash/restart."""
         try:
+            # First check how many are stuck
+            count = db.get_url_count_by_status("processing")
+            if not count:
+                return
+
+            logger.info(f"Crash recovery: found {count} stuck URLs, resetting...")
+
+            # Reset in batches of 200 to avoid oversized responses
             from app.db.supabase_client import get_client
             client = get_client()
             total_reset = 0
 
-            while True:
-                # Get a batch of stuck URLs
-                stuck = (
+            while total_reset < count + 100:  # safety limit
+                batch = (
                     client.table("urls")
                     .select("url")
                     .eq("status", "processing")
-                    .limit(500)
+                    .limit(200)
                     .execute()
                 )
-                if not stuck.data:
+                if not batch.data:
                     break
 
-                # Reset them one batch at a time
-                for row in stuck.data:
+                urls = [r["url"] for r in batch.data]
+                for url in urls:
                     try:
-                        client.table("urls").update(
-                            {"status": "pending"}
-                        ).eq("url", row["url"]).execute()
-                        total_reset += 1
+                        (client.table("urls")
+                         .update({"status": "pending"})
+                         .eq("url", url)
+                         .execute())
                     except Exception:
                         pass
+                total_reset += len(urls)
+                logger.info(f"  Reset {total_reset}/{count} URLs...")
 
-            if total_reset:
-                logger.info(f"Crash recovery: reset {total_reset} stuck URLs to pending")
+            logger.info(f"Crash recovery complete: reset {total_reset} URLs to pending")
         except Exception as e:
             logger.error(f"Failed to recover stuck URLs: {e}")
 
