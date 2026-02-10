@@ -247,7 +247,16 @@ class Orchestrator:
 
             async def process_one(url: str) -> int:
                 async with sem:
-                    return await self.processor.process(url, country=country)
+                    try:
+                        result = await self.processor.process(url, country=country)
+                        return result
+                    except Exception as e:
+                        logger.error(f"process_one error for {url}: {e}")
+                        try:
+                            db.mark_url_done(url, emails_found=0, error=str(e)[:200])
+                        except Exception:
+                            pass
+                        return 0
 
             # Process batch concurrently
             tasks = [process_one(url) for url in pending]
