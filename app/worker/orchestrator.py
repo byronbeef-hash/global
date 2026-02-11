@@ -45,6 +45,7 @@ class Orchestrator:
         self.job_manager = JobManager()
         self.search = SearchDiscovery()
         self._shutdown = False
+        self._url_processing_lock = asyncio.Lock()
 
     async def run_forever(self) -> None:
         """Main loop: pick jobs, execute them, repeat."""
@@ -71,23 +72,20 @@ class Orchestrator:
                         f"Found {len(jobs)} queued jobs — "
                         f"running concurrently"
                     )
-                    # Launch all jobs as background tasks
-                    running = [
-                        asyncio.create_task(self._execute_job(job))
-                        for job in jobs
-                    ]
-                    # Wait for all to finish, checking periodically
-                    # so the event loop stays responsive for /health
-                    while running and not self._shutdown:
-                        done, running_set = await asyncio.wait(
-                            running, timeout=5, return_when=asyncio.FIRST_COMPLETED
-                        )
-                        running = list(running_set)
-                        for task in done:
-                            if task.exception():
-                                logger.error(
-                                    f"Job task failed: {task.exception()}"
-                                )
+                    # Run jobs concurrently but process them
+                    # sequentially through phases to avoid
+                    # overwhelming the event loop with sync DB calls.
+                    # Each job's search discovery already has async
+                    # yields, so interleaving works naturally.
+                    tasks = [self._execute_job(job) for job in jobs]
+                    results = await asyncio.gather(
+                        *tasks, return_exceptions=True
+                    )
+                    for i, r in enumerate(results):
+                        if isinstance(r, Exception):
+                            logger.error(
+                                f"Job {jobs[i].get('id')} failed: {r}"
+                            )
                 else:
                     # Auto-create jobs for each active country
                     created = await asyncio.to_thread(self._auto_create_jobs)
@@ -261,7 +259,19 @@ class Orchestrator:
     async def _process_pending_urls(
         self, job_id: int, country: str = "US"
     ) -> None:
-        """Phase 2: Process all pending URLs in the queue."""
+        """Phase 2: Process all pending URLs in the queue.
+
+        Uses a lock so only one job processes URLs at a time,
+        preventing concurrent jobs from overwhelming the event loop
+        with synchronous DB calls.
+        """
+        async with self._url_processing_lock:
+            await self._do_process_pending_urls(job_id, country)
+
+    async def _do_process_pending_urls(
+        self, job_id: int, country: str = "US"
+    ) -> None:
+        """Internal: actually process pending URLs."""
         logger.info(f"[Job {job_id}] Phase 2: Processing pending URLs")
 
         total_processed = 0
@@ -269,8 +279,10 @@ class Orchestrator:
         sem = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
         while not self._shutdown:
-            # Get next batch
-            pending = db.get_pending_urls(limit=WORKER_BATCH_SIZE)
+            # Get next batch (in thread to avoid blocking event loop)
+            pending = await asyncio.to_thread(
+                db.get_pending_urls, WORKER_BATCH_SIZE
+            )
             if not pending:
                 break
 
