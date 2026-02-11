@@ -60,6 +60,10 @@ class Orchestrator:
         # Run crash recovery in background so healthcheck can pass immediately
         asyncio.create_task(self._startup_recovery())
 
+        # Wait for healthcheck to pass before starting work
+        logger.info("Waiting 30s for healthcheck before starting jobs...")
+        await asyncio.sleep(30)
+
         while not self._shutdown:
             try:
                 # Get ALL queued jobs in a single query
