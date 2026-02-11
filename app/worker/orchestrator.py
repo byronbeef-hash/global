@@ -62,19 +62,35 @@ class Orchestrator:
         while not self._shutdown:
             try:
                 # Get ALL queued jobs in a single query
-                jobs = self.job_manager.get_all_queued_jobs()
+                jobs = await asyncio.to_thread(
+                    self.job_manager.get_all_queued_jobs
+                )
 
                 if jobs:
                     logger.info(
                         f"Found {len(jobs)} queued jobs — "
                         f"running concurrently"
                     )
-                    # Run all jobs concurrently
-                    tasks = [self._execute_job(job) for job in jobs]
-                    await asyncio.gather(*tasks, return_exceptions=True)
+                    # Launch all jobs as background tasks
+                    running = [
+                        asyncio.create_task(self._execute_job(job))
+                        for job in jobs
+                    ]
+                    # Wait for all to finish, checking periodically
+                    # so the event loop stays responsive for /health
+                    while running and not self._shutdown:
+                        done, running_set = await asyncio.wait(
+                            running, timeout=5, return_when=asyncio.FIRST_COMPLETED
+                        )
+                        running = list(running_set)
+                        for task in done:
+                            if task.exception():
+                                logger.error(
+                                    f"Job task failed: {task.exception()}"
+                                )
                 else:
                     # Auto-create jobs for each active country
-                    created = self._auto_create_jobs()
+                    created = await asyncio.to_thread(self._auto_create_jobs)
                     if not created:
                         logger.debug(
                             f"No new jobs to create, sleeping {WORKER_SLEEP_BETWEEN_JOBS}s"
@@ -145,7 +161,7 @@ class Orchestrator:
             f"Executing job {job_id}: type={job_type}, "
             f"country={config['name']}, regions={len(states)}"
         )
-        self.job_manager.start_job(job_id)
+        await asyncio.to_thread(self.job_manager.start_job, job_id)
 
         try:
             # Phase 1: Discovery
@@ -203,6 +219,8 @@ class Orchestrator:
                 query_index=query_idx,
                 urls_discovered=total_discovered,
             )
+            # Yield to event loop so /health can respond
+            await asyncio.sleep(0)
 
             # Every 10 queries, process some pending URLs for email extraction
             if queries_since_processing >= 10:
@@ -284,6 +302,8 @@ class Orchestrator:
                 f"[Job {job_id}] Progress: {total_processed} URLs processed, "
                 f"{total_emails} emails saved"
             )
+            # Yield to event loop so /health can respond
+            await asyncio.sleep(0)
 
         logger.info(
             f"[Job {job_id}] URL processing complete: "
