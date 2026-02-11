@@ -56,16 +56,8 @@ class Orchestrator:
         logger.info("Orchestrator started — multi-country mode")
         logger.info(f"Active countries: {get_all_active_countries()}")
 
-        # Recovery from prior crash/restart
-        try:
-            stuck = db.reset_stuck_urls()
-            if stuck:
-                logger.info(f"Reset {stuck} stuck 'processing' URLs to 'pending'")
-            orphaned = db.reset_orphaned_jobs()
-            if orphaned:
-                logger.info(f"Reset {orphaned} orphaned 'running' jobs to 'failed'")
-        except Exception as e:
-            logger.warning(f"Startup recovery error: {e}")
+        # Run crash recovery in background so healthcheck can pass immediately
+        asyncio.create_task(self._startup_recovery())
 
         while not self._shutdown:
             try:
@@ -89,6 +81,19 @@ class Orchestrator:
 
         logger.info("Orchestrator shutting down gracefully")
         await self.fetcher.close()
+
+    async def _startup_recovery(self) -> None:
+        """Reset stuck URLs and orphaned jobs from prior crash/restart."""
+        try:
+            await asyncio.sleep(5)
+            stuck = await asyncio.to_thread(db.reset_stuck_urls)
+            if stuck:
+                logger.info(f"Recovery: reset {stuck} stuck URLs to 'pending'")
+            orphaned = await asyncio.to_thread(db.reset_orphaned_jobs)
+            if orphaned:
+                logger.info(f"Recovery: reset {orphaned} orphaned jobs to 'failed'")
+        except Exception as e:
+            logger.warning(f"Startup recovery error: {e}")
 
     def _auto_create_jobs(self) -> bool:
         """Auto-create full scrape jobs for each active country.
