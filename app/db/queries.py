@@ -1,11 +1,16 @@
 """All database query operations for the cattle scraper."""
 
 import logging
+import time
 from datetime import datetime
 
 from app.db.supabase_client import get_client
 
 logger = logging.getLogger(__name__)
+
+# Simple in-memory cache for expensive queries
+_cache: dict[str, tuple[float, any]] = {}
+CACHE_TTL = 30  # seconds
 
 
 # ── Contacts ──────────────────────────────────────────────────────────
@@ -162,59 +167,87 @@ def get_emails_per_country() -> list[dict]:
 def get_emails_by_country_and_state() -> dict:
     """Get email counts grouped by country, then by state/region within each country.
 
-    Returns dict like:
-    {
-        "US": {"name": "United States", "total": 17243, "states": [{"state": "ND", "count": 1535}, ...]},
-        "NZ": {"name": "New Zealand", "total": 0, "states": []},
-        ...
-    }
+    Uses RPC function for efficiency (single SQL query instead of paginating
+    all rows). Results are cached for 30s to avoid hammering the DB.
+
+    Shows ALL regions from config for each country, with 0 for regions
+    that don't have contacts yet.
     """
+    # Check cache first
+    cached = _cache.get("emails_by_country_state")
+    if cached:
+        cache_time, cache_data = cached
+        if time.time() - cache_time < CACHE_TTL:
+            return cache_data
+
     from app.config import COUNTRY_CONFIG, ACTIVE_COUNTRIES
 
     client = get_client()
 
-    # Get all country+state pairs (paginated — Supabase default limit is 1000)
+    # Try RPC first (efficient server-side GROUP BY)
     rows = []
     try:
-        offset = 0
-        page_size = 1000
-        while True:
-            result = (
-                client.table("contacts")
-                .select("country, state")
-                .range(offset, offset + page_size - 1)
-                .execute()
-            )
-            batch = result.data or []
-            rows.extend(batch)
-            if len(batch) < page_size:
-                break
-            offset += page_size
-    except Exception as e:
-        logger.error(f"Failed to fetch country/state data: {e}")
-        rows = []
+        result = client.rpc("get_emails_by_country_state").execute()
+        rows = result.data or []
+    except Exception:
+        # Fallback: use count queries per country
+        try:
+            for code in ACTIVE_COUNTRIES:
+                count_result = (
+                    client.table("contacts")
+                    .select("id", count="exact")
+                    .eq("country", code)
+                    .execute()
+                )
+                total = count_result.count or 0
+                if total > 0:
+                    rows.append({"country": code, "state": "", "cnt": total})
+        except Exception as e:
+            logger.error(f"Failed to fetch country/state data: {e}")
 
-    # Build nested counts
+    # Build nested counts from RPC result
     country_state_counts: dict[str, dict[str, int]] = {}
     country_totals: dict[str, int] = {}
     for row in rows:
         c = row.get("country") or "US"
         s = row.get("state") or "Unknown"
+        cnt = row.get("cnt", 0)
         if c not in country_state_counts:
             country_state_counts[c] = {}
             country_totals[c] = 0
-        country_state_counts[c][s] = country_state_counts[c].get(s, 0) + 1
-        country_totals[c] = country_totals[c] + 1
+        country_state_counts[c][s] = cnt
+        country_totals[c] += cnt
 
-    # Build result for all active countries (even those with 0 contacts)
+    # Build result showing ALL regions from config for each country
     result_data = {}
     for code in ACTIVE_COUNTRIES:
         cfg = COUNTRY_CONFIG.get(code, {})
-        states_dict = country_state_counts.get(code, {})
+        all_regions = cfg.get("regions", [])
+        db_states = country_state_counts.get(code, {})
+
+        # Start with all configured regions (count=0 by default)
+        region_counts = {r: 0 for r in all_regions}
+
+        # Merge in actual counts from DB
+        for s, cnt in db_states.items():
+            if s in region_counts:
+                region_counts[s] = cnt
+            elif s == "Unknown" or s == "":
+                # Skip unknown/empty states in the region list
+                pass
+            else:
+                # State from DB not in config — include it anyway
+                region_counts[s] = cnt
+
+        # Sort: regions with contacts first (desc), then alphabetical
         states_list = [
             {"state": s, "count": n}
-            for s, n in sorted(states_dict.items(), key=lambda x: -x[1])
+            for s, n in sorted(
+                region_counts.items(),
+                key=lambda x: (-x[1], x[0]),
+            )
         ]
+
         result_data[code] = {
             "name": cfg.get("name", code),
             "total": country_totals.get(code, 0),
@@ -225,6 +258,9 @@ def get_emails_by_country_and_state() -> dict:
     result_data = dict(
         sorted(result_data.items(), key=lambda x: -x[1]["total"])
     )
+
+    # Cache the result
+    _cache["emails_by_country_state"] = (time.time(), result_data)
     return result_data
 
 
@@ -550,6 +586,19 @@ def get_next_queued_job() -> dict | None:
         .execute()
     )
     return result.data[0] if result.data else None
+
+
+def get_all_queued_jobs() -> list[dict]:
+    """Get ALL queued jobs in a single query (for concurrent execution)."""
+    client = get_client()
+    result = (
+        client.table("scrape_jobs")
+        .select("*")
+        .eq("status", "queued")
+        .order("created_at")
+        .execute()
+    )
+    return result.data or []
 
 
 # ── Search Queries ────────────────────────────────────────────────────
