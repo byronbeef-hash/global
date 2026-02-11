@@ -190,18 +190,35 @@ def get_emails_by_country_and_state() -> dict:
         result = client.rpc("get_emails_by_country_state").execute()
         rows = result.data or []
     except Exception:
-        # Fallback: use count queries per country
+        # Fallback: fetch only country+state columns and count in Python
+        # Much faster than paginating all columns
         try:
-            for code in ACTIVE_COUNTRIES:
-                count_result = (
+            all_rows = []
+            offset = 0
+            page_size = 1000
+            while True:
+                batch = (
                     client.table("contacts")
-                    .select("id", count="exact")
-                    .eq("country", code)
+                    .select("country,state")
+                    .range(offset, offset + page_size - 1)
                     .execute()
                 )
-                total = count_result.count or 0
-                if total > 0:
-                    rows.append({"country": code, "state": "", "cnt": total})
+                data = batch.data or []
+                if not data:
+                    break
+                all_rows.extend(data)
+                offset += len(data)
+                if len(data) < page_size:
+                    break
+            # Count in Python
+            counts: dict[tuple[str, str], int] = {}
+            for r in all_rows:
+                key = (r.get("country") or "US", r.get("state") or "")
+                counts[key] = counts.get(key, 0) + 1
+            rows = [
+                {"country": c, "state": s, "cnt": n}
+                for (c, s), n in counts.items()
+            ]
         except Exception as e:
             logger.error(f"Failed to fetch country/state data: {e}")
 
