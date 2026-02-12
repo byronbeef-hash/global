@@ -61,11 +61,17 @@ class Orchestrator:
 
         while not self._shutdown:
             try:
-                # Check for queued jobs
-                job = self.job_manager.get_next_job()
+                # Get ALL queued jobs in a single query
+                jobs = self.job_manager.get_all_queued_jobs()
 
-                if job:
-                    await self._execute_job(job)
+                if jobs:
+                    logger.info(f"Found {len(jobs)} queued jobs — running concurrently")
+                    # Run all jobs concurrently
+                    tasks = [self._execute_job(job) for job in jobs]
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+                    for i, r in enumerate(results):
+                        if isinstance(r, Exception):
+                            logger.error(f"Job {jobs[i].get('id')} failed: {r}")
                 else:
                     # Auto-create jobs for each active country
                     created = self._auto_create_jobs()

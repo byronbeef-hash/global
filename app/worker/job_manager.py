@@ -61,22 +61,30 @@ class JobManager:
         status = "failed" if error else "completed"
         logger.info(f"Job {job_id} {status}" + (f": {error}" if error else ""))
 
-    def get_next_job(self) -> dict | None:
-        """Get the next queued job to process.
+    def _decode_country(self, job: dict) -> dict:
+        """Decode country from job_type field (e.g. 'full:NZ' -> country='NZ')."""
+        jt = job.get("job_type", "full")
+        if ":" in jt:
+            parts = jt.split(":", 1)
+            job["job_type"] = parts[0]
+            job["country"] = parts[1]
+        else:
+            job["country"] = "US"
+        return job
 
-        Decodes country from the job_type field (e.g. 'full:NZ' -> country='NZ').
-        """
+    def get_next_job(self) -> dict | None:
+        """Get the next queued job to process."""
         job = db.get_next_queued_job()
         if job:
-            # Decode country from job_type
-            jt = job.get("job_type", "full")
-            if ":" in jt:
-                parts = jt.split(":", 1)
-                job["job_type"] = parts[0]
-                job["country"] = parts[1]
-            else:
-                job["country"] = "US"
+            self._decode_country(job)
         return job
+
+    def get_all_queued_jobs(self) -> list[dict]:
+        """Get ALL queued jobs in a single query (for concurrent execution)."""
+        jobs = db.get_all_queued_jobs()
+        for job in jobs:
+            self._decode_country(job)
+        return jobs
 
     def get_active_jobs(self) -> list[dict]:
         """Get all running/queued jobs."""
