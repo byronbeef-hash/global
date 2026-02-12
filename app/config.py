@@ -16,7 +16,7 @@ PORT = int(os.environ.get("PORT", "8080"))
 
 # === Rate Limiting ===
 DEFAULT_RATE_LIMIT = float(os.environ.get("DEFAULT_RATE_LIMIT", "3.0"))
-SEARCH_RATE_LIMIT = float(os.environ.get("SEARCH_RATE_LIMIT", "5.0"))
+SEARCH_RATE_LIMIT = float(os.environ.get("SEARCH_RATE_LIMIT", "2.0"))
 DIRECTORY_RATE_LIMIT = float(os.environ.get("DIRECTORY_RATE_LIMIT", "4.0"))
 MAX_CONCURRENT_REQUESTS = int(os.environ.get("MAX_CONCURRENT_REQUESTS", "5"))
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", "30"))
@@ -71,6 +71,12 @@ COUNTRY_CONFIG = {
             "dairy farm", "cow calf operation", "livestock ranch",
             "angus ranch", "hereford ranch", "cattle breeder",
             "cattle rancher", "beef producer", "cattle operation",
+            "ranch email", "feedlot", "cattle feedlot",
+            "cow farm", "heifer farm", "stockyard",
+            "cattle company", "beef company", "ranch company",
+            "family ranch", "family cattle farm",
+            "commercial cattle", "purebred cattle",
+            "seed stock producer", "stocker cattle",
         ],
         "search_templates": [
             "{term} {region} contact email",
@@ -82,6 +88,15 @@ COUNTRY_CONFIG = {
             "registered {breed} {region} email",
             "{term} bulls for sale {region} email contact",
             "{term} for sale {region} contact",
+            "{term} {region} owner email",
+            "{term} {region} website contact",
+            "{term} near {region} email",
+            "{breed} breeder {region} email address",
+            "{breed} cattle for sale {region} contact",
+            "{term} {region} phone email",
+            "{term} {region} ranch email",
+            "buy cattle {region} contact email",
+            "cattle for sale {region} farmer email",
         ],
         "breeds": [
             "angus", "hereford", "charolais", "simmental", "limousin",
@@ -107,12 +122,17 @@ COUNTRY_CONFIG = {
         "top_regions": [
             "Waikato", "Canterbury", "Southland", "Otago", "Manawatu-Whanganui",
             "Taranaki", "Hawkes Bay", "Bay of Plenty", "Northland", "Gisborne",
+            "Wellington", "Tasman", "Nelson", "Marlborough", "West Coast",
+            "Gisborne",
         ],
         "search_terms": [
             "cattle farm", "beef farm", "dairy farm", "cattle station",
             "cattle breeder", "beef breeder", "stud cattle",
             "beef producer", "cattle farmer", "dairy farmer",
             "livestock farm", "bull breeder", "cattle stud",
+            "cattle property", "grazing farm", "stock farm",
+            "farm email", "farmer contact", "rural property",
+            "beef cattle farm", "dairy cattle farm",
         ],
         "search_templates": [
             "{term} {region} New Zealand contact email",
@@ -124,6 +144,11 @@ COUNTRY_CONFIG = {
             "{breed} cattle {region} New Zealand email",
             "{term} for sale {region} New Zealand contact",
             "cattle stud {region} NZ email",
+            "{term} {region} NZ farmer email",
+            "{term} {region} New Zealand owner contact",
+            "{breed} stud {region} NZ email address",
+            "buy {breed} cattle {region} New Zealand email",
+            "{term} near {region} NZ contact email",
         ],
         "breeds": [
             "angus", "hereford", "charolais", "simmental", "limousin",
@@ -168,6 +193,9 @@ COUNTRY_CONFIG = {
             "beef breeder", "pedigree cattle", "cattle farmer",
             "beef producer", "livestock farm", "cattle herd",
             "pedigree herd", "bull breeder", "cattle stud",
+            "farm email", "farmer contact", "agricultural farm",
+            "beef herd", "suckler herd", "pedigree breeder",
+            "livestock breeder", "cattle dealer",
         ],
         "search_templates": [
             "{term} {region} UK contact email",
@@ -179,6 +207,12 @@ COUNTRY_CONFIG = {
             "registered {breed} {region} UK email",
             "{breed} cattle {region} UK email",
             "{term} for sale {region} UK contact",
+            "{term} {region} UK farmer email",
+            "{term} {region} UK owner contact",
+            "{breed} herd {region} UK email address",
+            "buy {breed} cattle {region} UK email",
+            "{term} near {region} UK contact email",
+            "{term} {region} Britain email address",
         ],
         "breeds": [
             "angus", "aberdeen angus", "hereford", "charolais", "simmental",
@@ -202,13 +236,17 @@ COUNTRY_CONFIG = {
         ],
         "top_regions": [
             "Alberta", "Saskatchewan", "Manitoba", "British Columbia",
-            "Ontario", "Quebec",
+            "Ontario", "Quebec", "New Brunswick", "Nova Scotia",
+            "Prince Edward Island", "Newfoundland",
         ],
         "search_terms": [
             "cattle ranch", "cattle farm", "beef ranch", "beef cattle",
             "dairy farm", "cow calf operation", "livestock ranch",
             "cattle breeder", "cattle rancher", "beef producer",
             "cattle operation", "purebred cattle",
+            "feedlot", "ranch email", "cow farm",
+            "family ranch", "commercial cattle",
+            "seed stock producer", "cattle company",
         ],
         "search_templates": [
             "{term} {region} Canada contact email",
@@ -220,6 +258,11 @@ COUNTRY_CONFIG = {
             "{breed} cattle {region} Canada email",
             "{term} bulls for sale {region} Canada email",
             "{term} for sale {region} Canada contact",
+            "{term} {region} Canadian farmer email",
+            "{term} {region} Canada owner contact",
+            "{breed} breeder {region} Canada email address",
+            "buy {breed} cattle {region} Canada email",
+            "{term} near {region} Canada contact email",
         ],
         "breeds": [
             "angus", "hereford", "charolais", "simmental", "limousin",
@@ -242,13 +285,16 @@ COUNTRY_CONFIG = {
         ],
         "top_regions": [
             "Queensland", "New South Wales", "Victoria", "South Australia",
-            "Western Australia", "Tasmania",
+            "Western Australia", "Tasmania", "Northern Territory",
         ],
         "search_terms": [
             "cattle station", "cattle farm", "beef farm", "cattle property",
             "cattle breeder", "beef producer", "cattle stud",
             "beef breeder", "cattle farmer", "livestock farm",
             "stud cattle", "bull breeder", "grazing property",
+            "farm email", "farmer contact", "rural property",
+            "beef cattle farm", "commercial cattle",
+            "cattle company", "pastoral company",
         ],
         "search_templates": [
             "{term} {region} Australia contact email",
@@ -260,6 +306,11 @@ COUNTRY_CONFIG = {
             "{breed} cattle {region} Australia email",
             "{term} for sale {region} Australia contact",
             "cattle stud {region} Australia email",
+            "{term} {region} Australian farmer email",
+            "{term} {region} Australia owner contact",
+            "{breed} stud {region} Australia email address",
+            "buy {breed} cattle {region} Australia email",
+            "{term} near {region} Australia contact email",
         ],
         "breeds": [
             "angus", "hereford", "charolais", "simmental", "limousin",

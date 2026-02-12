@@ -100,6 +100,7 @@ class Orchestrator:
     def _auto_create_jobs(self) -> bool:
         """Auto-create full scrape jobs for each active country.
 
+        Uses ALL regions (not just top_regions) for maximum coverage.
         Returns True if any jobs were created.
         """
         countries = get_all_active_countries()
@@ -107,7 +108,8 @@ class Orchestrator:
 
         for country_code in countries:
             config = get_country_config(country_code)
-            regions = config["top_regions"]
+            # Use ALL regions for maximum email coverage
+            regions = config["regions"]
 
             # Create a full scrape job for this country
             queries = self.search.generate_queries(

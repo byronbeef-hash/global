@@ -604,19 +604,6 @@ def get_all_queued_jobs() -> list[dict]:
     return result.data or []
 
 
-def get_all_queued_jobs() -> list[dict]:
-    """Get ALL queued jobs in a single query (for concurrent execution)."""
-    client = get_client()
-    result = (
-        client.table("scrape_jobs")
-        .select("*")
-        .eq("status", "queued")
-        .order("created_at")
-        .execute()
-    )
-    return result.data or []
-
-
 # ── Search Queries ────────────────────────────────────────────────────
 
 def mark_query_done(query: str, results_count: int, urls_found: int, job_id: int | None = None) -> None:
