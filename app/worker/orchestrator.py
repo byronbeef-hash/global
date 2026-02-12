@@ -45,7 +45,6 @@ class Orchestrator:
         self.job_manager = JobManager()
         self.search = SearchDiscovery()
         self._shutdown = False
-        self._url_processing_lock = asyncio.Lock()
 
     async def run_forever(self) -> None:
         """Main loop: pick jobs, execute them, repeat."""
@@ -60,22 +59,16 @@ class Orchestrator:
         # Run crash recovery in background so healthcheck can pass immediately
         asyncio.create_task(self._startup_recovery())
 
-        # Wait for healthcheck to pass before starting work
-        logger.info("Waiting 30s for healthcheck before starting jobs...")
-        await asyncio.sleep(30)
-
         while not self._shutdown:
             try:
-                # Get next queued job
-                job = await asyncio.to_thread(
-                    self.job_manager.get_next_job
-                )
+                # Check for queued jobs
+                job = self.job_manager.get_next_job()
 
                 if job:
                     await self._execute_job(job)
                 else:
                     # Auto-create jobs for each active country
-                    created = await asyncio.to_thread(self._auto_create_jobs)
+                    created = self._auto_create_jobs()
                     if not created:
                         logger.debug(
                             f"No new jobs to create, sleeping {WORKER_SLEEP_BETWEEN_JOBS}s"
@@ -146,7 +139,7 @@ class Orchestrator:
             f"Executing job {job_id}: type={job_type}, "
             f"country={config['name']}, regions={len(states)}"
         )
-        await asyncio.to_thread(self.job_manager.start_job, job_id)
+        self.job_manager.start_job(job_id)
 
         try:
             # Phase 1: Discovery
@@ -204,8 +197,6 @@ class Orchestrator:
                 query_index=query_idx,
                 urls_discovered=total_discovered,
             )
-            # Yield to event loop so /health can respond
-            await asyncio.sleep(0)
 
             # Every 10 queries, process some pending URLs for email extraction
             if queries_since_processing >= 10:
@@ -246,19 +237,7 @@ class Orchestrator:
     async def _process_pending_urls(
         self, job_id: int, country: str = "US"
     ) -> None:
-        """Phase 2: Process all pending URLs in the queue.
-
-        Uses a lock so only one job processes URLs at a time,
-        preventing concurrent jobs from overwhelming the event loop
-        with synchronous DB calls.
-        """
-        async with self._url_processing_lock:
-            await self._do_process_pending_urls(job_id, country)
-
-    async def _do_process_pending_urls(
-        self, job_id: int, country: str = "US"
-    ) -> None:
-        """Internal: actually process pending URLs."""
+        """Phase 2: Process all pending URLs in the queue."""
         logger.info(f"[Job {job_id}] Phase 2: Processing pending URLs")
 
         total_processed = 0
@@ -266,10 +245,8 @@ class Orchestrator:
         sem = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
         while not self._shutdown:
-            # Get next batch (in thread to avoid blocking event loop)
-            pending = await asyncio.to_thread(
-                db.get_pending_urls, WORKER_BATCH_SIZE
-            )
+            # Get next batch
+            pending = db.get_pending_urls(limit=WORKER_BATCH_SIZE)
             if not pending:
                 break
 
@@ -301,8 +278,6 @@ class Orchestrator:
                 f"[Job {job_id}] Progress: {total_processed} URLs processed, "
                 f"{total_emails} emails saved"
             )
-            # Yield to event loop so /health can respond
-            await asyncio.sleep(0)
 
         logger.info(
             f"[Job {job_id}] URL processing complete: "

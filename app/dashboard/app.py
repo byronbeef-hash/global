@@ -1,6 +1,5 @@
 """FastAPI dashboard for monitoring and managing the cattle scraper."""
 
-import asyncio
 import csv
 import io
 import logging
@@ -47,8 +46,8 @@ async def health():
 
 @app.get("/", response_class=HTMLResponse)
 async def home():
-    stats = await asyncio.to_thread(db.get_dashboard_stats)
-    country_data = await asyncio.to_thread(db.get_emails_by_country_and_state)
+    stats = db.get_dashboard_stats()
+    country_data = db.get_emails_by_country_and_state()
 
     # Country flag emojis
     flags = {"US": "🇺🇸", "NZ": "🇳🇿", "UK": "🇬🇧", "CA": "🇨🇦", "AU": "🇦🇺"}
@@ -109,9 +108,8 @@ async def recent(
     country: str = Query(default="", description="Filter by country code"),
     state: str = Query(default="", description="Filter by state"),
 ):
-    contacts = await asyncio.to_thread(
-        db.get_recent_contacts_filtered,
-        country, state, 200,
+    contacts = db.get_recent_contacts_filtered(
+        country=country, state=state, limit=200,
     )
 
     # Build filter description
@@ -157,14 +155,14 @@ async def recent(
 
 @app.get("/export", response_class=HTMLResponse)
 async def export_page():
-    state_data = await asyncio.to_thread(db.get_emails_per_state)
+    state_data = db.get_emails_per_state()
 
     state_options = '<option value="">All States</option>'
     if state_data:
         for row in state_data:
             state_options += f'<option value="{row["state"]}">{row["state"]} ({row["count"]:,})</option>'
 
-    total = await asyncio.to_thread(db.get_contact_count)
+    total = db.get_contact_count()
     return render_template(
         "export.html",
         total_contacts=f"{total:,}",
@@ -176,9 +174,9 @@ async def export_page():
 async def export_csv(state: str = Query(default="", description="Filter by state")):
     """Download contacts as CSV."""
     if state:
-        contacts = await asyncio.to_thread(db.get_contacts_by_state, state)
+        contacts = db.get_contacts_by_state(state)
     else:
-        contacts = await asyncio.to_thread(db.get_all_contacts)
+        contacts = db.get_all_contacts()
 
     def generate():
         output = io.StringIO()
@@ -206,9 +204,9 @@ async def export_csv(state: str = Query(default="", description="Filter by state
 async def export_emails(state: str = Query(default="", description="Filter by state")):
     """Download emails only as text file."""
     if state:
-        contacts = await asyncio.to_thread(db.get_contacts_by_state, state)
+        contacts = db.get_contacts_by_state(state)
     else:
-        contacts = await asyncio.to_thread(db.get_all_contacts)
+        contacts = db.get_all_contacts()
 
     emails = "\n".join(c["email"] for c in contacts if c.get("email"))
     filename = f"emails_{state or 'all'}_{datetime.now().strftime('%Y%m%d')}.txt"
@@ -221,7 +219,7 @@ async def export_emails(state: str = Query(default="", description="Filter by st
 
 @app.get("/jobs", response_class=HTMLResponse)
 async def jobs_page():
-    all_jobs = await asyncio.to_thread(job_manager.get_all_jobs, 50)
+    all_jobs = job_manager.get_all_jobs(limit=50)
 
     rows = ""
     for j in all_jobs:
@@ -293,11 +291,11 @@ async def create_job(request: Request):
 
 @app.get("/stats", response_class=HTMLResponse)
 async def stats_page():
-    stats = await asyncio.to_thread(db.get_dashboard_stats)
-    state_data = await asyncio.to_thread(db.get_emails_per_state)
+    stats = db.get_dashboard_stats()
+    state_data = db.get_emails_per_state()
 
     # Top domains
-    contacts = await asyncio.to_thread(db.get_recent_contacts, 1000)
+    contacts = db.get_recent_contacts(limit=1000)
     domain_counts: dict[str, int] = {}
     for c in contacts:
         email = c.get("email", "")
@@ -334,19 +332,19 @@ async def stats_page():
 @app.get("/api/stats")
 async def api_stats():
     """JSON stats endpoint."""
-    return await asyncio.to_thread(db.get_dashboard_stats)
+    return db.get_dashboard_stats()
 
 
 @app.get("/api/emails-per-state")
 async def api_emails_per_state():
     """JSON emails per state."""
-    return await asyncio.to_thread(db.get_emails_per_state)
+    return db.get_emails_per_state()
 
 
 @app.get("/api/emails-by-country")
 async def api_emails_by_country():
     """JSON emails grouped by country with state breakdown."""
-    return await asyncio.to_thread(db.get_emails_by_country_and_state)
+    return db.get_emails_by_country_and_state()
 
 
 @app.get("/api/recent")
@@ -356,9 +354,8 @@ async def api_recent(
     limit: int = Query(default=100, description="Limit results"),
 ):
     """JSON recent contacts with optional filters."""
-    contacts = await asyncio.to_thread(
-        db.get_recent_contacts_filtered,
-        country, state, limit,
+    contacts = db.get_recent_contacts_filtered(
+        country=country, state=state, limit=limit,
     )
     return {"count": len(contacts), "contacts": contacts}
 
@@ -366,4 +363,4 @@ async def api_recent(
 @app.get("/api/performance")
 async def api_performance():
     """JSON performance metrics: collection rates and timing."""
-    return await asyncio.to_thread(db.get_performance_metrics)
+    return db.get_performance_metrics()
