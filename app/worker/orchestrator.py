@@ -66,30 +66,13 @@ class Orchestrator:
 
         while not self._shutdown:
             try:
-                # Get ALL queued jobs in a single query
-                jobs = await asyncio.to_thread(
-                    self.job_manager.get_all_queued_jobs
+                # Get next queued job
+                job = await asyncio.to_thread(
+                    self.job_manager.get_next_job
                 )
 
-                if jobs:
-                    logger.info(
-                        f"Found {len(jobs)} queued jobs — "
-                        f"running concurrently"
-                    )
-                    # Run jobs concurrently but process them
-                    # sequentially through phases to avoid
-                    # overwhelming the event loop with sync DB calls.
-                    # Each job's search discovery already has async
-                    # yields, so interleaving works naturally.
-                    tasks = [self._execute_job(job) for job in jobs]
-                    results = await asyncio.gather(
-                        *tasks, return_exceptions=True
-                    )
-                    for i, r in enumerate(results):
-                        if isinstance(r, Exception):
-                            logger.error(
-                                f"Job {jobs[i].get('id')} failed: {r}"
-                            )
+                if job:
+                    await self._execute_job(job)
                 else:
                     # Auto-create jobs for each active country
                     created = await asyncio.to_thread(self._auto_create_jobs)
