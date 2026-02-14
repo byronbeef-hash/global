@@ -341,32 +341,19 @@ def add_urls(urls: list[str], source: str = "", state: str = "", discovered_by: 
     return added
 
 
-def get_pending_urls(limit: int = 50, country: str = "") -> list[str]:
-    """Get next batch of pending URLs to process, optionally filtered by country.
-
-    When country is provided, only URLs discovered for that country are returned.
-    This prevents cross-contamination (e.g. UK job processing US-discovered URLs).
-    """
+def get_pending_urls(limit: int = 50) -> list[str]:
+    """Get next batch of pending URLs to process."""
     client = get_client()
 
-    try:
-        query = (
-            client.table("urls")
-            .select("url")
-            .eq("status", "pending")
-        )
-        if country:
-            # Try country filter; fall back to unfiltered if column missing
-            try:
-                result = query.eq("country", country).order("created_at").limit(limit).execute()
-            except Exception:
-                result = query.order("created_at").limit(limit).execute()
-        else:
-            result = query.order("created_at").limit(limit).execute()
-    except Exception as e:
-        logger.error(f"get_pending_urls error: {e}")
-        return []
-
+    # Mark them as processing atomically
+    result = (
+        client.table("urls")
+        .select("url")
+        .eq("status", "pending")
+        .order("created_at")
+        .limit(limit)
+        .execute()
+    )
     urls = [row["url"] for row in (result.data or [])]
 
     if urls:
