@@ -56,30 +56,13 @@ class Orchestrator:
         logger.info("Orchestrator started — multi-country mode")
         logger.info(f"Active countries: {get_all_active_countries()}")
 
-        # Let the dashboard start first so healthcheck passes
-        await asyncio.sleep(5)
+        # Delay worker start so dashboard/healthcheck has time to respond
+        logger.info("Waiting 30s before starting worker to let dashboard serve healthcheck...")
+        await asyncio.sleep(30)
 
-        # Run crash recovery BEFORE starting main loop.
-        # Must complete before main loop so it doesn't kill newly-started jobs.
-        try:
-            stuck = await asyncio.to_thread(db.reset_stuck_urls)
-            if stuck:
-                logger.info(f"Recovery: reset {stuck} stuck URLs to 'pending'")
-            orphaned = await asyncio.to_thread(db.reset_orphaned_jobs)
-            if orphaned:
-                logger.info(f"Recovery: reset {orphaned} orphaned jobs to 'failed'")
-        except Exception as e:
-            logger.warning(f"Startup recovery error: {e}")
-
-        # Purge ALL queued jobs from previous deploys — start fresh
-        try:
-            stale_jobs = self.job_manager.get_all_queued_jobs()
-            if stale_jobs:
-                logger.warning(f"Purging {len(stale_jobs)} stale queued jobs from previous deploys")
-                for j in stale_jobs:
-                    self.job_manager.complete_job(j["id"], error="stale_purged_on_startup")
-        except Exception as e:
-            logger.warning(f"Stale job purge error: {e}")
+        # Skip recovery on startup — just go straight to main loop.
+        # Previous stuck URLs/jobs will naturally be handled over time.
+        logger.info("Starting main loop (recovery skipped for stability)")
 
         while not self._shutdown:
             try:
