@@ -249,8 +249,8 @@ class Orchestrator:
         sem = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
         while not self._shutdown:
-            # Get next batch
-            pending = db.get_pending_urls(limit=WORKER_BATCH_SIZE)
+            # Get next batch — filter by country to prevent cross-contamination
+            pending = db.get_pending_urls(limit=WORKER_BATCH_SIZE, country=country)
             if not pending:
                 break
 

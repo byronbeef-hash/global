@@ -50,19 +50,69 @@ ADDRESS_RE = re.compile(
 
 # Junk email domains to filter out
 JUNK_EMAIL_DOMAINS = {
+    # Technical/platform domains
     "example.com", "sentry.io", "wixpress.com", "googleapis.com",
     "w3.org", "schema.org", "facebook.com", "twitter.com",
     "instagram.com", "google.com", "googleusercontent.com",
     "gstatic.com", "cloudflare.com", "jquery.com", "wordpress.com",
-    "wp.com", "gravatar.com", "bootstrapcdn.com",
+    "wp.com", "gravatar.com", "bootstrapcdn.com", "squarespace.com",
+    "shopify.com", "wix.com", "godaddy.com", "mailchimp.com",
+    "constantcontact.com", "hubspot.com", "salesforce.com",
+    "zendesk.com", "intercom.io", "typeform.com", "calendly.com",
+    # News/media domains
+    "nytimes.com", "washingtonpost.com", "cnn.com", "bbc.com",
+    "bbc.co.uk", "reuters.com", "apnews.com", "usatoday.com",
+    "denverpost.com", "westword.com", "yahoo.com", "msn.com",
+    # Government
+    "state.co.us", "state.tx.us", "state.mn.us",
 }
 
-# Patterns for definitely-not-contact emails (keep info@, support@ — they're valid for farms)
+# Patterns for definitely-not-contact emails
 JUNK_EMAIL_PATTERNS = [
     r".*\.png$", r".*\.jpg$", r".*\.gif$", r".*\.svg$",
     r"^noreply@", r"^no-reply@", r"^donotreply@",
     r"^webmaster@", r"^postmaster@", r"^mailer-daemon@",
+    # Government/institutional
+    r".*@.*\.gov$", r".*@.*\.gov\.\w+$", r".*@.*\.edu$",
+    r".*@.*state\.\w{2}\.us$",
+    # Generic non-farm prefixes
+    r"^editor@", r"^press@", r"^marketing@", r"^advertising@",
+    r"^hr@", r"^careers@", r"^jobs@", r"^recruitment@",
+    r"^legal@", r"^compliance@", r"^privacy@",
+    r"^newsletter@", r"^subscribe@", r"^unsubscribe@",
+    r"^abuse@", r"^spam@", r"^security@", r"^root@",
+    r"^admin@", r"^administrator@", r"^hostmaster@",
+    r"^billing@", r"^accounts@", r"^payments@",
 ]
+
+# Source URL domains that are never cattle farms — skip entirely
+JUNK_SOURCE_DOMAINS = {
+    # News / media
+    "denverpost.com", "westword.com", "nytimes.com", "washingtonpost.com",
+    "cnn.com", "bbc.com", "bbc.co.uk", "reuters.com", "theguardian.com",
+    "independent.co.uk", "telegraph.co.uk", "dailymail.co.uk",
+    "abc.net.au", "smh.com.au", "stuff.co.nz", "nzherald.co.nz",
+    "cbc.ca", "globalnews.ca", "ctvnews.ca",
+    "usatoday.com", "apnews.com", "foxnews.com", "nbcnews.com",
+    # Social / forums / blogs
+    "reddit.com", "quora.com", "facebook.com", "twitter.com",
+    "instagram.com", "youtube.com", "linkedin.com", "tiktok.com",
+    "pinterest.com", "tumblr.com", "medium.com", "wordpress.com",
+    "blogspot.com", "blogger.com",
+    # Government
+    "usda.gov", "epa.gov", "fda.gov", "irs.gov",
+    "colorado.gov", "texas.gov", "nebraska.gov",
+    "gov.uk", "gov.au", "govt.nz", "canada.ca",
+    # Classifieds / generic directories
+    "craigslist.org", "ebay.com", "amazon.com", "walmart.com",
+    "indeed.com", "glassdoor.com", "zillow.com", "realtor.com",
+    "realestate.com.au", "trademe.co.nz", "rightmove.co.uk",
+    # Real estate / non-farm
+    "flatraterealtygroup.com",
+    # Misc junk
+    "bigfootforums.com", "wikipedia.org", "wikimedia.org",
+    "archive.org", "web.archive.org",
+}
 
 
 @dataclass

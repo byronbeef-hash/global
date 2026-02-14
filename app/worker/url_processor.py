@@ -12,7 +12,7 @@ from urllib.parse import urlparse, urljoin
 from bs4 import BeautifulSoup
 
 from app.scraper.page_fetcher import PageFetcher, FetchResult
-from app.scraper.contact_extractor import ContactExtractor, ContactInfo
+from app.scraper.contact_extractor import ContactExtractor, ContactInfo, JUNK_SOURCE_DOMAINS
 from app.scraper.metadata_extractor import MetadataExtractor
 from app.db import queries as db
 
@@ -35,6 +35,15 @@ class URLProcessor:
         # Skip if already completed or failed (avoid re-processing)
         if db.is_url_completed(url):
             return 0
+
+        # Skip junk source domains (news, gov, social media, etc.)
+        try:
+            domain = urlparse(url).netloc.lower().lstrip("www.")
+            if domain in JUNK_SOURCE_DOMAINS:
+                db.mark_url_done(url, emails_found=0, error="junk_domain")
+                return 0
+        except Exception:
+            pass
 
         # Check if we already have a contact from this exact source_url
         # (means a directory/association crawler already captured it inline)
