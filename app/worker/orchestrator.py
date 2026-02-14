@@ -74,8 +74,18 @@ class Orchestrator:
                 jobs = self.job_manager.get_all_queued_jobs()
 
                 if jobs:
-                    logger.info(f"Found {len(jobs)} queued jobs — running concurrently")
-                    # Run all jobs concurrently
+                    # Cap at 5 concurrent jobs (one per country) to prevent
+                    # memory issues from accumulated queued jobs after restarts
+                    if len(jobs) > 5:
+                        logger.warning(f"Found {len(jobs)} queued jobs, capping at 5")
+                        # Cancel excess jobs
+                        for excess_job in jobs[5:]:
+                            self.job_manager.complete_job(
+                                excess_job["id"], error="excess_job_purged"
+                            )
+                        jobs = jobs[:5]
+
+                    logger.info(f"Running {len(jobs)} jobs concurrently")
                     tasks = [self._execute_job(job) for job in jobs]
                     results = await asyncio.gather(*tasks, return_exceptions=True)
                     for i, r in enumerate(results):
