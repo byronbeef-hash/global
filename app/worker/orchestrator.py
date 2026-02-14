@@ -56,7 +56,10 @@ class Orchestrator:
         logger.info("Orchestrator started — multi-country mode")
         logger.info(f"Active countries: {get_all_active_countries()}")
 
-        # Run crash recovery BEFORE starting main loop (in thread to not block healthcheck).
+        # Let the dashboard start first so healthcheck passes
+        await asyncio.sleep(5)
+
+        # Run crash recovery BEFORE starting main loop.
         # Must complete before main loop so it doesn't kill newly-started jobs.
         try:
             stuck = await asyncio.to_thread(db.reset_stuck_urls)
@@ -67,6 +70,16 @@ class Orchestrator:
                 logger.info(f"Recovery: reset {orphaned} orphaned jobs to 'failed'")
         except Exception as e:
             logger.warning(f"Startup recovery error: {e}")
+
+        # Purge ALL queued jobs from previous deploys — start fresh
+        try:
+            stale_jobs = self.job_manager.get_all_queued_jobs()
+            if stale_jobs:
+                logger.warning(f"Purging {len(stale_jobs)} stale queued jobs from previous deploys")
+                for j in stale_jobs:
+                    self.job_manager.complete_job(j["id"], error="stale_purged_on_startup")
+        except Exception as e:
+            logger.warning(f"Stale job purge error: {e}")
 
         while not self._shutdown:
             try:
