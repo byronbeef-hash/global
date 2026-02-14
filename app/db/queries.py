@@ -349,14 +349,24 @@ def get_pending_urls(limit: int = 50, country: str = "") -> list[str]:
     """
     client = get_client()
 
-    query = (
-        client.table("urls")
-        .select("url")
-        .eq("status", "pending")
-    )
-    if country:
-        query = query.eq("country", country)
-    result = query.order("created_at").limit(limit).execute()
+    try:
+        query = (
+            client.table("urls")
+            .select("url")
+            .eq("status", "pending")
+        )
+        if country:
+            # Try country filter; fall back to unfiltered if column missing
+            try:
+                result = query.eq("country", country).order("created_at").limit(limit).execute()
+            except Exception:
+                result = query.order("created_at").limit(limit).execute()
+        else:
+            result = query.order("created_at").limit(limit).execute()
+    except Exception as e:
+        logger.error(f"get_pending_urls error: {e}")
+        return []
+
     urls = [row["url"] for row in (result.data or [])]
 
     if urls:
