@@ -57,24 +57,29 @@ class Orchestrator:
         logger.info(f"Active countries: {get_all_active_countries()}")
 
         # Delay worker start so dashboard/healthcheck has time to respond
-        logger.info("Waiting 30s before starting worker to let dashboard serve healthcheck...")
-        await asyncio.sleep(30)
+        logger.info("Waiting 15s before starting worker to let dashboard serve healthcheck...")
+        await asyncio.sleep(15)
 
-        # Skip recovery on startup — just go straight to main loop.
-        # Previous stuck URLs/jobs will naturally be handled over time.
-        logger.info("Starting main loop (recovery skipped for stability)")
+        # Purge ALL stale queued jobs from crash cycles before starting
+        try:
+            stale = self.job_manager.get_all_queued_jobs()
+            if stale:
+                logger.warning(f"Purging {len(stale)} stale queued jobs from previous runs")
+                for j in stale:
+                    self.job_manager.complete_job(j["id"], error="stale_purged")
+        except Exception as e:
+            logger.warning(f"Stale purge error: {e}")
+
+        logger.info("Starting main loop (clean slate)")
 
         while not self._shutdown:
             try:
-                # Get ALL queued jobs in a single query
+                # Get queued jobs
                 jobs = self.job_manager.get_all_queued_jobs()
 
                 if jobs:
-                    # Cap at 5 concurrent jobs (one per country) to prevent
-                    # memory issues from accumulated queued jobs after restarts
+                    # Run max 5 jobs concurrently (one per country)
                     if len(jobs) > 5:
-                        logger.warning(f"Found {len(jobs)} queued jobs, capping at 5")
-                        # Cancel excess jobs
                         for excess_job in jobs[5:]:
                             self.job_manager.complete_job(
                                 excess_job["id"], error="excess_job_purged"

@@ -16,9 +16,9 @@ PORT = int(os.environ.get("PORT", "8080"))
 
 # === Rate Limiting ===
 DEFAULT_RATE_LIMIT = float(os.environ.get("DEFAULT_RATE_LIMIT", "2.0"))
-SEARCH_RATE_LIMIT = float(os.environ.get("SEARCH_RATE_LIMIT", "1.0"))
+SEARCH_RATE_LIMIT = float(os.environ.get("SEARCH_RATE_LIMIT", "1.5"))
 DIRECTORY_RATE_LIMIT = float(os.environ.get("DIRECTORY_RATE_LIMIT", "3.0"))
-MAX_CONCURRENT_REQUESTS = int(os.environ.get("MAX_CONCURRENT_REQUESTS", "10"))
+MAX_CONCURRENT_REQUESTS = int(os.environ.get("MAX_CONCURRENT_REQUESTS", "5"))
 REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", "30"))
 
 # === Retry ===
@@ -34,7 +34,7 @@ PLAYWRIGHT_HEADLESS = True
 PLAYWRIGHT_TIMEOUT = 20000  # ms
 
 # === Worker ===
-WORKER_BATCH_SIZE = int(os.environ.get("WORKER_BATCH_SIZE", "100"))
+WORKER_BATCH_SIZE = int(os.environ.get("WORKER_BATCH_SIZE", "50"))
 WORKER_SLEEP_BETWEEN_JOBS = int(os.environ.get("WORKER_SLEEP_BETWEEN_JOBS", "30"))
 
 # === Active Countries ===
