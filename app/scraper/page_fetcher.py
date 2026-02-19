@@ -78,11 +78,17 @@ class PageFetcher:
 
         # Try httpx first
         result = await self._fetch_httpx(url)
-        if result.success and not self._needs_js_rendering(result.html):
+
+        # Check if page needs JS rendering (offload to thread — BS4 parse is CPU-heavy)
+        needs_js = False
+        if result.success:
+            needs_js = await asyncio.to_thread(self._needs_js_rendering, result.html)
+
+        if result.success and not needs_js:
             return result
 
         # Fall back to Playwright if httpx failed or page needs JS
-        if not result.success or self._needs_js_rendering(result.html):
+        if not result.success or needs_js:
             logger.debug(f"Falling back to Playwright for: {url}")
             if not self.proxy.is_enabled:
                 await self.rate_limiter.wait(url)

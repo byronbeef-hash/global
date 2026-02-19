@@ -57,8 +57,8 @@ class Orchestrator:
         logger.info(f"Active countries: {get_all_active_countries()}")
 
         # Delay worker start so dashboard/healthcheck has time to respond
-        logger.info("Waiting 15s before starting worker to let dashboard serve healthcheck...")
-        await asyncio.sleep(15)
+        logger.info("Waiting 5s before starting worker to let dashboard serve healthcheck...")
+        await asyncio.sleep(5)
 
         # Purge ALL stale queued jobs from crash cycles before starting
         try:
@@ -74,6 +74,9 @@ class Orchestrator:
 
         while not self._shutdown:
             try:
+                # Yield to event loop so FastAPI health checks can respond
+                await asyncio.sleep(0)
+
                 # Get queued jobs
                 jobs = self.job_manager.get_all_queued_jobs()
 
@@ -198,6 +201,9 @@ class Orchestrator:
             job_id=job_id,
             country=country,
         ):
+            # Yield to event loop between queries (prevents health check starvation)
+            await asyncio.sleep(0)
+
             # Add URLs to queue with country tag
             added = db.add_urls(
                 urls, source="search",
@@ -260,6 +266,9 @@ class Orchestrator:
         sem = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
         while not self._shutdown:
+            # Yield to event loop between batches (prevents health check starvation)
+            await asyncio.sleep(0)
+
             # Get next batch
             pending = db.get_pending_urls(limit=WORKER_BATCH_SIZE)
             if not pending:
@@ -325,16 +334,22 @@ class Orchestrator:
             if self._shutdown:
                 return
 
+            # Yield to event loop between crawlers
+            await asyncio.sleep(0)
+
             logger.info(f"[Job {job_id}] Running {name} crawler")
             try:
                 contacts = await crawler.crawl_all_states(states)
                 saved = 0
-                for raw in contacts:
+                for i, raw in enumerate(contacts):
                     if not raw.get("email"):
                         continue
                     raw["country"] = country
                     if db.upsert_contact(raw):
                         saved += 1
+                    # Yield every 50 contacts to prevent event loop starvation
+                    if i % 50 == 0:
+                        await asyncio.sleep(0)
 
                 logger.info(f"[Job {job_id}] {name}: saved {saved} contacts")
             except Exception as e:

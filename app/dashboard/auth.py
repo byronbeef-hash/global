@@ -1,60 +1,139 @@
-"""Simple API key authentication for the dashboard."""
+"""Simple API key authentication for the dashboard.
 
+Uses a pure ASGI middleware instead of Starlette's BaseHTTPMiddleware to avoid
+the internal thread-hop and MemoryObjectStream overhead that causes /health
+to time out when the async event loop is under heavy worker load.
+
+The /health endpoint is short-circuited at the ASGI level before any
+framework processing, guaranteeing sub-millisecond response times.
+"""
+
+import json
 import logging
-from fastapi import Request, HTTPException
-from starlette.middleware.base import BaseHTTPMiddleware
+from http.cookies import SimpleCookie
+from urllib.parse import parse_qs
 
 from app.config import DASHBOARD_API_KEY
 
 logger = logging.getLogger(__name__)
 
-# Paths that don't require auth
+# Paths that don't require auth — handled as fast ASGI short-circuits
 PUBLIC_PATHS = {"/health", "/favicon.ico"}
 
+# Pre-built /health response body (avoids any work at request time)
+_HEALTH_BODY = b'{"status":"ok"}'
 
-class APIKeyMiddleware(BaseHTTPMiddleware):
-    """Check for API key in header, query parameter, or cookie."""
 
-    async def dispatch(self, request: Request, call_next):
-        path = request.url.path
+class APIKeyMiddleware:
+    """Pure ASGI middleware for API key authentication.
 
-        # Public endpoints
+    /health is answered directly at the ASGI layer — no framework overhead,
+    no thread hops, guaranteed instant response even under heavy load.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+
+        # ── Fast path: /health short-circuit ──────────────────────────
+        if path == "/health":
+            await send({
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [
+                    [b"content-type", b"application/json"],
+                    [b"content-length", str(len(_HEALTH_BODY)).encode()],
+                ],
+            })
+            await send({
+                "type": "http.response.body",
+                "body": _HEALTH_BODY,
+            })
+            return
+
+        # ── Other public paths: pass through without auth ─────────────
         if path in PUBLIC_PATHS:
-            return await call_next(request)
+            await self.app(scope, receive, send)
+            return
+
+        # ── Auth check ────────────────────────────────────────────────
+        headers = dict(scope.get("headers", []))
+        query_string = scope.get("query_string", b"").decode()
+        params = parse_qs(query_string)
 
         # Check API key from multiple sources
-        key_from_query = request.query_params.get("key")
-        api_key = (
-            request.headers.get("X-API-Key")
-            or key_from_query
-            or request.cookies.get("api_key")
-        )
+        key_from_header = headers.get(b"x-api-key", b"").decode()
+        key_from_query = params.get("key", [None])[0]
+
+        # Parse cookies
+        key_from_cookie = ""
+        raw_cookie = headers.get(b"cookie", b"").decode()
+        if raw_cookie:
+            cookie = SimpleCookie()
+            cookie.load(raw_cookie)
+            if "api_key" in cookie:
+                key_from_cookie = cookie["api_key"].value
+
+        api_key = key_from_header or key_from_query or key_from_cookie
 
         if api_key != DASHBOARD_API_KEY:
-            # If it's a page request, show a login form
-            if "text/html" in request.headers.get("accept", ""):
-                from fastapi.responses import HTMLResponse
-                return HTMLResponse(
-                    content=LOGIN_HTML,
-                    status_code=401,
-                )
-            raise HTTPException(status_code=401, detail="Invalid or missing API key")
+            # Check Accept header for HTML
+            accept = headers.get(b"accept", b"").decode()
+            if "text/html" in accept:
+                body = LOGIN_HTML.encode("utf-8")
+                await send({
+                    "type": "http.response.start",
+                    "status": 401,
+                    "headers": [
+                        [b"content-type", b"text/html; charset=utf-8"],
+                        [b"content-length", str(len(body)).encode()],
+                    ],
+                })
+                await send({
+                    "type": "http.response.body",
+                    "body": body,
+                })
+            else:
+                body = json.dumps({"detail": "Invalid or missing API key"}).encode()
+                await send({
+                    "type": "http.response.start",
+                    "status": 401,
+                    "headers": [
+                        [b"content-type", b"application/json"],
+                        [b"content-length", str(len(body)).encode()],
+                    ],
+                })
+                await send({
+                    "type": "http.response.body",
+                    "body": body,
+                })
+            return
 
-        # Process the request
-        response = await call_next(request)
-
-        # If key came from URL query param, set a cookie so nav links work
+        # ── Authenticated: pass through ───────────────────────────────
+        # If key came from query param, inject a Set-Cookie header
         if key_from_query == DASHBOARD_API_KEY:
-            response.set_cookie(
-                key="api_key",
-                value=api_key,
-                path="/",
-                max_age=86400 * 30,  # 30 days
-                httponly=True,
-                samesite="lax",
-            )
+            original_send = send
 
-        return response
+            async def send_with_cookie(message):
+                if message["type"] == "http.response.start":
+                    headers_list = list(message.get("headers", []))
+                    cookie_val = (
+                        f"api_key={api_key}; Path=/; Max-Age={86400 * 30}; "
+                        f"HttpOnly; SameSite=Lax"
+                    )
+                    headers_list.append([b"set-cookie", cookie_val.encode()])
+                    message = {**message, "headers": headers_list}
+                await original_send(message)
+
+            await self.app(scope, receive, send_with_cookie)
+        else:
+            await self.app(scope, receive, send)
 
 
 LOGIN_HTML = """

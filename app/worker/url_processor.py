@@ -2,8 +2,13 @@
 
 Optimised to avoid re-fetching pages when emails have already been
 captured inline by directory/association crawlers.
+
+CPU-heavy operations (BeautifulSoup parsing, regex extraction) are
+offloaded to a thread executor via asyncio.to_thread() to prevent
+blocking the async event loop and starving the FastAPI health endpoint.
 """
 
+import asyncio
 import logging
 import re
 from datetime import datetime
@@ -47,17 +52,23 @@ class URLProcessor:
             db.mark_url_done(url, emails_found=0, error=result.error or "fetch failed")
             return 0
 
-        # Extract contact info from the landing page
-        contact = self.contact_extractor.extract(result.html, url)
+        # Extract contact info in a thread to avoid blocking the event loop
+        # (BeautifulSoup parsing + regex extraction is CPU-heavy)
+        contact = await asyncio.to_thread(
+            self.contact_extractor.extract, result.html, url
+        )
 
         # If no emails found, try to follow a "Contact" link on the same domain
         if not contact.emails:
-            contact_url = self._find_contact_page_link(result.html, url)
+            contact_url = await asyncio.to_thread(
+                self._find_contact_page_link, result.html, url
+            )
             if contact_url and not db.is_url_seen(contact_url):
                 contact_result = await self.fetcher.fetch(contact_url)
                 if contact_result.success:
-                    contact2 = self.contact_extractor.extract(
-                        contact_result.html, contact_url
+                    contact2 = await asyncio.to_thread(
+                        self.contact_extractor.extract,
+                        contact_result.html, contact_url,
                     )
                     # Merge emails from contact page
                     for email in contact2.emails:
@@ -80,9 +91,10 @@ class URLProcessor:
             db.mark_url_done(url, emails_found=0)
             return 0
 
-        # Extract metadata
-        text = BeautifulSoup(result.html, "lxml").get_text(separator=" ", strip=True)
-        metadata = self.metadata_extractor.extract(text)
+        # Extract metadata in a thread (BeautifulSoup + regex)
+        metadata = await asyncio.to_thread(
+            self._extract_metadata_sync, result.html
+        )
 
         # Build records (one per email) and upsert
         records = self._contact_to_records(contact, metadata, country=country)
@@ -97,6 +109,11 @@ class URLProcessor:
 
         db.mark_url_done(url, emails_found=len(contact.emails))
         return saved
+
+    def _extract_metadata_sync(self, html: str) -> dict:
+        """Synchronous metadata extraction (run in thread)."""
+        text = BeautifulSoup(html, "lxml").get_text(separator=" ", strip=True)
+        return self.metadata_extractor.extract(text)
 
     @staticmethod
     def _validate_state(state: str, country: str) -> str:
