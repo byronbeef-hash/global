@@ -57,8 +57,8 @@ class Orchestrator:
         logger.info(f"Active countries: {get_all_active_countries()}")
 
         # Delay worker start so dashboard/healthcheck has time to respond
-        logger.info("Waiting 5s before starting worker to let dashboard serve healthcheck...")
-        await asyncio.sleep(5)
+        logger.info("Waiting 10s before starting worker...")
+        await asyncio.sleep(10)
 
         # Purge ALL stale queued jobs from crash cycles before starting
         try:
@@ -70,31 +70,21 @@ class Orchestrator:
         except Exception as e:
             logger.warning(f"Stale purge error: {e}")
 
-        logger.info("Starting main loop (clean slate)")
+        logger.info("Starting main loop (sequential, one job at a time)")
 
         while not self._shutdown:
             try:
-                # Yield to event loop so FastAPI health checks can respond
-                await asyncio.sleep(0)
+                await asyncio.sleep(1)
 
-                # Get queued jobs
-                jobs = self.job_manager.get_all_queued_jobs()
+                # Get next single queued job (sequential for stability)
+                job = self.job_manager.get_next_job()
 
-                if jobs:
-                    # Run max 5 jobs concurrently (one per country)
-                    if len(jobs) > 5:
-                        for excess_job in jobs[5:]:
-                            self.job_manager.complete_job(
-                                excess_job["id"], error="excess_job_purged"
-                            )
-                        jobs = jobs[:5]
-
-                    logger.info(f"Running {len(jobs)} jobs concurrently")
-                    tasks = [self._execute_job(job) for job in jobs]
-                    results = await asyncio.gather(*tasks, return_exceptions=True)
-                    for i, r in enumerate(results):
-                        if isinstance(r, Exception):
-                            logger.error(f"Job {jobs[i].get('id')} failed: {r}")
+                if job:
+                    logger.info(f"Running job {job['id']} ({job.get('country', 'US')})")
+                    try:
+                        await self._execute_job(job)
+                    except Exception as e:
+                        logger.error(f"Job {job['id']} failed: {e}")
                 else:
                     # Auto-create jobs for each active country
                     created = self._auto_create_jobs()
@@ -112,9 +102,8 @@ class Orchestrator:
         await self.fetcher.close()
 
     def _auto_create_jobs(self) -> bool:
-        """Auto-create full scrape jobs for each active country.
+        """Auto-create scrape jobs for all active countries.
 
-        Uses ALL regions (not just top_regions) for maximum coverage.
         Returns True if any jobs were created.
         """
         countries = get_all_active_countries()
@@ -122,23 +111,21 @@ class Orchestrator:
 
         for country_code in countries:
             config = get_country_config(country_code)
-            # Use ALL regions for maximum email coverage
             regions = config["regions"]
-
-            # Create a full scrape job for this country
-            queries = self.search.generate_queries(
-                states=regions, country=country_code
-            )
+            templates = config["search_templates"]
+            terms = config["search_terms"]
+            # Estimate query count without generating the full list
+            estimated_queries = len(regions) * len(templates) * len(terms)
 
             job_id = self.job_manager.create_job(
                 job_type="full",
                 states=regions,
-                total_queries=len(queries),
+                total_queries=estimated_queries,
                 country=country_code,
             )
             logger.info(
                 f"Auto-created job {job_id} for {config['name']} "
-                f"({len(regions)} regions, {len(queries)} queries)"
+                f"({len(regions)} regions, ~{estimated_queries} queries)"
             )
             created = True
 
