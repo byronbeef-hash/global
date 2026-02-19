@@ -60,6 +60,21 @@ class Orchestrator:
         logger.info("Waiting 10s before starting worker...")
         await asyncio.sleep(10)
 
+        # Recovery: reset orphaned jobs and stuck URLs from previous crashes
+        try:
+            orphaned = db.reset_orphaned_jobs()
+            if orphaned:
+                logger.warning(f"Reset {orphaned} orphaned running jobs to failed")
+        except Exception as e:
+            logger.warning(f"Orphaned job reset error: {e}")
+
+        try:
+            stuck = db.reset_stuck_urls()
+            if stuck:
+                logger.warning(f"Reset {stuck} stuck processing URLs to pending")
+        except Exception as e:
+            logger.warning(f"Stuck URL reset error: {e}")
+
         # Purge ALL stale queued jobs from crash cycles before starting
         try:
             stale = self.job_manager.get_all_queued_jobs()
