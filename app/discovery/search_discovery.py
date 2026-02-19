@@ -10,6 +10,7 @@ from app.config import (
     SEARCH_TEMPLATES, SEARCH_TERMS, CATTLE_BREEDS,
     SEARCH_RESULTS_PER_QUERY, TOP_CATTLE_STATES,
     SEARCH_RATE_LIMIT, COUNTRY_CONFIG, get_country_config,
+    QUERY_RERUN_DAYS,
 )
 from app.db import queries as db
 
@@ -98,22 +99,24 @@ class SearchDiscovery:
         job_id: int | None = None,
         country: str = "US",
     ) -> AsyncGenerator[tuple[list[str], str, int, int], None]:
-        """Run queries, skip already-done ones, yield (urls, query, index, total).
+        """Run queries, skip recently-done ones, yield (urls, query, index, total).
 
         Each batch of results is yielded so the caller can store them.
+        Queries older than QUERY_RERUN_DAYS are re-executed for fresh results.
         """
         queries = self.generate_queries(states, max_queries, country=country)
         total = len(queries)
+        skipped = 0
 
         for i, query in enumerate(queries):
-            # Skip if already executed
-            if db.is_query_done(query):
-                logger.debug(f"[{i+1}/{total}] Skipping already-done query")
+            # Skip if recently executed (older queries are re-run)
+            if db.is_query_done(query, max_age_days=QUERY_RERUN_DAYS):
+                skipped += 1
                 continue
 
             urls = await self.search(query)
 
-            # Record query as done
+            # Record query as done (updates executed_at on re-runs)
             db.mark_query_done(
                 query=query,
                 results_count=len(urls),
@@ -129,6 +132,12 @@ class SearchDiscovery:
                 yield urls, query, i, total
 
             await asyncio.sleep(SEARCH_RATE_LIMIT)
+
+        if skipped:
+            logger.info(
+                f"[{country}] Skipped {skipped}/{total} recently-done queries "
+                f"(re-run after {QUERY_RERUN_DAYS}d)"
+            )
 
     async def discover_urls(
         self,

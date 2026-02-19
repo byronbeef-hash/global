@@ -144,3 +144,69 @@ BEGIN
     );
 END;
 $$ LANGUAGE plpgsql;
+
+-- 9. Helper function: performance metrics (single query replaces 16 individual queries)
+CREATE OR REPLACE FUNCTION get_performance_metrics()
+RETURNS JSON AS $$
+DECLARE
+    result JSON;
+BEGIN
+    SELECT json_build_object(
+        'last_1min',  (SELECT COUNT(*) FROM contacts WHERE created_at >= NOW() - INTERVAL '1 minute'),
+        'last_5min',  (SELECT COUNT(*) FROM contacts WHERE created_at >= NOW() - INTERVAL '5 minutes'),
+        'last_15min', (SELECT COUNT(*) FROM contacts WHERE created_at >= NOW() - INTERVAL '15 minutes'),
+        'last_1hr',   (SELECT COUNT(*) FROM contacts WHERE created_at >= NOW() - INTERVAL '1 hour'),
+        'last_24hr',  (SELECT COUNT(*) FROM contacts WHERE created_at >= NOW() - INTERVAL '24 hours'),
+        'urls_last_1min',  (SELECT COUNT(*) FROM urls WHERE created_at >= NOW() - INTERVAL '1 minute'),
+        'urls_last_5min',  (SELECT COUNT(*) FROM urls WHERE created_at >= NOW() - INTERVAL '5 minutes'),
+        'urls_last_15min', (SELECT COUNT(*) FROM urls WHERE created_at >= NOW() - INTERVAL '15 minutes'),
+        'urls_last_1hr',   (SELECT COUNT(*) FROM urls WHERE created_at >= NOW() - INTERVAL '1 hour'),
+        'urls_last_24hr',  (SELECT COUNT(*) FROM urls WHERE created_at >= NOW() - INTERVAL '24 hours'),
+        'total_emails',   (SELECT COUNT(*) FROM contacts),
+        'total_urls',     (SELECT COUNT(*) FROM urls),
+        'urls_completed', (SELECT COUNT(*) FROM urls WHERE status = 'completed'),
+        'urls_pending',   (SELECT COUNT(*) FROM urls WHERE status = 'pending'),
+        'per_minute',     ROUND((SELECT COUNT(*) FROM contacts WHERE created_at >= NOW() - INTERVAL '5 minutes')::numeric / 5, 1),
+        'per_hour',       (SELECT COUNT(*) FROM contacts WHERE created_at >= NOW() - INTERVAL '1 hour'),
+        'urls_per_minute', ROUND((SELECT COUNT(*) FROM urls WHERE created_at >= NOW() - INTERVAL '5 minutes')::numeric / 5, 1),
+        'urls_per_hour',  (SELECT COUNT(*) FROM urls WHERE created_at >= NOW() - INTERVAL '1 hour'),
+        'scraper_start',  (SELECT started_at FROM scrape_jobs WHERE status = 'running' ORDER BY started_at LIMIT 1),
+        'first_contact',  (SELECT created_at FROM contacts ORDER BY created_at LIMIT 1)
+    ) INTO result;
+    RETURN result;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 10. Helper function: emails by country and state
+CREATE OR REPLACE FUNCTION get_emails_by_country_state()
+RETURNS JSON AS $$
+BEGIN
+    RETURN (
+        SELECT json_agg(row_to_json(t))
+        FROM (
+            SELECT country, state, COUNT(*) as cnt
+            FROM contacts
+            WHERE country IS NOT NULL AND country != ''
+            GROUP BY country, state
+            ORDER BY country, cnt DESC
+        ) t
+    );
+END;
+$$ LANGUAGE plpgsql;
+
+-- 11. Indexes for time-windowed queries (speeds up performance metrics)
+CREATE INDEX IF NOT EXISTS idx_contacts_created_at ON contacts(created_at);
+CREATE INDEX IF NOT EXISTS idx_urls_created_at ON urls(created_at);
+
+-- 12. Add country column to urls if not exists
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'urls' AND column_name = 'country') THEN
+        ALTER TABLE urls ADD COLUMN country TEXT DEFAULT 'US';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'contacts' AND column_name = 'country') THEN
+        ALTER TABLE contacts ADD COLUMN country TEXT DEFAULT 'US';
+    END IF;
+END $$;
+CREATE INDEX IF NOT EXISTS idx_contacts_country ON contacts(country);
+CREATE INDEX IF NOT EXISTS idx_urls_country ON urls(country);

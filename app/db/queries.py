@@ -285,15 +285,23 @@ def get_emails_per_state() -> list[dict]:
 
 
 def get_dashboard_stats() -> dict:
-    """Get aggregated stats for the dashboard."""
+    """Get aggregated stats for the dashboard. Cached for 30s."""
+    cached = _cache.get("dashboard_stats")
+    if cached:
+        cache_time, cache_data = cached
+        if time.time() - cache_time < CACHE_TTL:
+            return cache_data
+
     client = get_client()
     try:
         result = client.rpc("get_dashboard_stats").execute()
-        return result.data or {}
+        data = result.data or {}
+        _cache["dashboard_stats"] = (time.time(), data)
+        return data
     except Exception as e:
         logger.warning(f"Dashboard stats RPC failed, using fallback: {e}")
         # Fallback
-        return {
+        data = {
             "total_emails": get_contact_count(),
             "total_urls": get_url_count(),
             "urls_pending": get_url_count_by_status("pending"),
@@ -302,6 +310,8 @@ def get_dashboard_stats() -> dict:
             "active_jobs": get_job_count_by_status("running"),
             "completed_jobs": get_job_count_by_status("completed"),
         }
+        _cache["dashboard_stats"] = (time.time(), data)
+        return data
 
 
 # ── URLs ──────────────────────────────────────────────────────────────
@@ -607,12 +617,15 @@ def get_all_queued_jobs() -> list[dict]:
 # ── Search Queries ────────────────────────────────────────────────────
 
 def mark_query_done(query: str, results_count: int, urls_found: int, job_id: int | None = None) -> None:
-    """Record a completed search query."""
+    """Record a completed search query (updates executed_at on re-runs)."""
+    from datetime import datetime, timezone
+
     client = get_client()
     data = {
         "query": query,
         "results_count": results_count,
         "urls_found": urls_found,
+        "executed_at": datetime.now(timezone.utc).isoformat(),
     }
     if job_id:
         data["job_id"] = job_id
@@ -622,17 +635,37 @@ def mark_query_done(query: str, results_count: int, urls_found: int, job_id: int
         logger.error(f"Failed to mark query done: {e}")
 
 
-def is_query_done(query: str) -> bool:
-    """Check if a search query has already been executed."""
+def is_query_done(query: str, max_age_days: int = 7) -> bool:
+    """Check if a search query has been executed recently.
+
+    Returns False if the query was executed more than max_age_days ago,
+    allowing it to be re-run for fresh results.
+    """
+    from datetime import datetime, timedelta, timezone
+
     client = get_client()
     result = (
         client.table("search_queries")
-        .select("id")
+        .select("id, executed_at")
         .eq("query", query)
         .limit(1)
         .execute()
     )
-    return bool(result.data)
+    if not result.data:
+        return False
+
+    # Check if the query is older than max_age_days
+    executed_at = result.data[0].get("executed_at")
+    if executed_at:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)
+        try:
+            exec_time = datetime.fromisoformat(executed_at.replace("Z", "+00:00"))
+            if exec_time < cutoff:
+                return False  # Expired — re-run it
+        except (ValueError, TypeError):
+            pass
+
+    return True
 
 
 def get_completed_query_count() -> int:
@@ -649,11 +682,30 @@ def get_performance_metrics() -> dict:
 
     Returns dict with counts for last 1min, 5min, 15min, 1hr, 24hr,
     plus overall rate calculations.
+
+    Cached for 30s to avoid hammering the DB with 16+ queries every 10s.
     """
+    # Check cache first — this is polled every 10s by the dashboard JS
+    cached = _cache.get("performance_metrics")
+    if cached:
+        cache_time, cache_data = cached
+        if time.time() - cache_time < CACHE_TTL:
+            return cache_data
+
     from datetime import datetime, timedelta, timezone
 
     client = get_client()
     now = datetime.now(timezone.utc)
+
+    # Try RPC first (single query, much faster)
+    try:
+        result = client.rpc("get_performance_metrics").execute()
+        if result.data:
+            data = result.data
+            _cache["performance_metrics"] = (time.time(), data)
+            return data
+    except Exception:
+        pass  # Fallback to individual queries
 
     windows = {
         "last_1min": now - timedelta(minutes=1),
@@ -756,7 +808,7 @@ def get_performance_metrics() -> dict:
     except Exception:
         pass
 
-    return {
+    perf_data = {
         **email_counts,
         **url_counts,
         "total_emails": total_emails,
@@ -770,3 +822,6 @@ def get_performance_metrics() -> dict:
         "scraper_start": scraper_start,
         "first_contact": first_contact_time,
     }
+
+    _cache["performance_metrics"] = (time.time(), perf_data)
+    return perf_data

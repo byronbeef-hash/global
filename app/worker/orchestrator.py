@@ -89,7 +89,15 @@ class Orchestrator:
                 if job:
                     logger.info(f"Running job {job['id']} ({job.get('country', 'US')})")
                     try:
-                        await self._execute_job(job)
+                        # 4-hour timeout per job to prevent infinite hangs
+                        await asyncio.wait_for(
+                            self._execute_job(job), timeout=4 * 3600
+                        )
+                    except asyncio.TimeoutError:
+                        logger.error(f"Job {job['id']} timed out after 4 hours")
+                        self.job_manager.complete_job(
+                            job["id"], error="timeout after 4 hours"
+                        )
                     except Exception as e:
                         logger.error(f"Job {job['id']} failed: {e}")
                 else:

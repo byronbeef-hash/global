@@ -36,6 +36,7 @@ PLAYWRIGHT_TIMEOUT = 20000  # ms
 # === Worker ===
 WORKER_BATCH_SIZE = int(os.environ.get("WORKER_BATCH_SIZE", "50"))
 WORKER_SLEEP_BETWEEN_JOBS = int(os.environ.get("WORKER_SLEEP_BETWEEN_JOBS", "30"))
+QUERY_RERUN_DAYS = int(os.environ.get("QUERY_RERUN_DAYS", "3"))
 
 # === Active Countries ===
 ACTIVE_COUNTRIES = os.environ.get("ACTIVE_COUNTRIES", "US,NZ,UK,CA,AU").split(",")
