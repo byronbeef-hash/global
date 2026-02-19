@@ -61,15 +61,16 @@ class Orchestrator:
         await asyncio.sleep(10)
 
         # Recovery: reset orphaned jobs and stuck URLs from previous crashes
+        # Run in thread to avoid blocking the event loop (dashboard healthcheck)
         try:
-            orphaned = db.reset_orphaned_jobs()
+            orphaned = await asyncio.to_thread(db.reset_orphaned_jobs)
             if orphaned:
                 logger.warning(f"Reset {orphaned} orphaned running jobs to failed")
         except Exception as e:
             logger.warning(f"Orphaned job reset error: {e}")
 
         try:
-            stuck = db.reset_stuck_urls()
+            stuck = await asyncio.to_thread(db.reset_stuck_urls)
             if stuck:
                 logger.warning(f"Reset {stuck} stuck processing URLs to pending")
         except Exception as e:
