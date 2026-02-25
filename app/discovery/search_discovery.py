@@ -103,15 +103,31 @@ class SearchDiscovery:
 
         Each batch of results is yielded so the caller can store them.
         Queries older than QUERY_RERUN_DAYS are re-executed for fresh results.
+
+        Uses bulk get_recent_queries() to check all queries in ONE DB call
+        instead of per-query is_query_done() which made 29K+ HTTP round-trips
+        and starved the dashboard event loop.
         """
         queries = self.generate_queries(states, max_queries, country=country)
         total = len(queries)
         skipped = 0
 
+        # Bulk-fetch all recently-done queries in ONE call (replaces 29K+ individual checks)
+        recent_queries = await asyncio.to_thread(
+            db.get_recent_queries, QUERY_RERUN_DAYS
+        )
+        logger.info(
+            f"[{country}] {len(recent_queries)} queries done recently, "
+            f"{total} total to check"
+        )
+
         for i, query in enumerate(queries):
-            # Skip if recently executed (older queries are re-run)
-            if db.is_query_done(query, max_age_days=QUERY_RERUN_DAYS):
+            # In-memory set lookup — instant, no DB call
+            if query in recent_queries:
                 skipped += 1
+                # Yield to event loop every 500 skips so dashboard stays responsive
+                if skipped % 500 == 0:
+                    await asyncio.sleep(0)
                 continue
 
             urls = await self.search(query)
@@ -123,6 +139,9 @@ class SearchDiscovery:
                 urls_found=len(urls),
                 job_id=job_id,
             )
+
+            # Add to in-memory set so we don't re-check next iteration
+            recent_queries.add(query)
 
             if urls:
                 logger.info(

@@ -667,11 +667,63 @@ def mark_query_done(query: str, results_count: int, urls_found: int, job_id: int
         logger.error(f"Failed to mark query done: {e}")
 
 
+def get_recent_queries(max_age_days: int = 7) -> set[str]:
+    """Fetch ALL recently-executed query strings in ONE call.
+
+    Returns a set of query strings that were executed within max_age_days.
+    This replaces per-query is_query_done() calls — instead of 29,000
+    individual Supabase HTTP round-trips (which starve the event loop),
+    we make a single paginated fetch and check in-memory.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    cached = _cache.get("recent_queries")
+    if cached:
+        cache_time, cache_data = cached
+        if time.time() - cache_time < 120:  # Cache 2 min (queries don't change fast)
+            return cache_data
+
+    client = get_client()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).isoformat()
+    recent: set[str] = set()
+
+    try:
+        # Paginate: Supabase returns max 1000 rows per call
+        offset = 0
+        page_size = 1000
+        while True:
+            result = (
+                client.table("search_queries")
+                .select("query")
+                .gte("executed_at", cutoff)
+                .range(offset, offset + page_size - 1)
+                .execute()
+            )
+            rows = result.data or []
+            for row in rows:
+                q = row.get("query")
+                if q:
+                    recent.add(q)
+            if len(rows) < page_size:
+                break
+            offset += page_size
+
+        logger.info(f"Loaded {len(recent)} recent queries (within {max_age_days}d)")
+    except Exception as e:
+        logger.error(f"Failed to fetch recent queries: {e}")
+
+    _cache["recent_queries"] = (time.time(), recent)
+    return recent
+
+
 def is_query_done(query: str, max_age_days: int = 7) -> bool:
     """Check if a search query has been executed recently.
 
     Returns False if the query was executed more than max_age_days ago,
     allowing it to be re-run for fresh results.
+
+    NOTE: For bulk checking, prefer get_recent_queries() which fetches
+    all queries in one call instead of one HTTP round-trip per query.
     """
     from datetime import datetime, timedelta, timezone
 
