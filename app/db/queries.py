@@ -164,6 +164,36 @@ def get_emails_per_country() -> list[dict]:
         return [{"country": c, "count": n} for c, n in sorted(country_counts.items(), key=lambda x: -x[1])]
 
 
+_STATE_ABBREV_TO_NAME = {
+    "US": {
+        "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas",
+        "CA": "California", "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware",
+        "FL": "Florida", "GA": "Georgia", "HI": "Hawaii", "ID": "Idaho",
+        "IL": "Illinois", "IN": "Indiana", "IA": "Iowa", "KS": "Kansas",
+        "KY": "Kentucky", "LA": "Louisiana", "ME": "Maine", "MD": "Maryland",
+        "MA": "Massachusetts", "MI": "Michigan", "MN": "Minnesota", "MS": "Mississippi",
+        "MO": "Missouri", "MT": "Montana", "NE": "Nebraska", "NV": "Nevada",
+        "NH": "New Hampshire", "NJ": "New Jersey", "NM": "New Mexico", "NY": "New York",
+        "NC": "North Carolina", "ND": "North Dakota", "OH": "Ohio", "OK": "Oklahoma",
+        "OR": "Oregon", "PA": "Pennsylvania", "RI": "Rhode Island", "SC": "South Carolina",
+        "SD": "South Dakota", "TN": "Tennessee", "TX": "Texas", "UT": "Utah",
+        "VT": "Vermont", "VA": "Virginia", "WA": "Washington", "WV": "West Virginia",
+        "WI": "Wisconsin", "WY": "Wyoming", "DC": "District of Columbia",
+    },
+    "AU": {
+        "NSW": "New South Wales", "QLD": "Queensland", "VIC": "Victoria",
+        "SA": "South Australia", "WA": "Western Australia", "TAS": "Tasmania",
+        "NT": "Northern Territory", "ACT": "Australian Capital Territory",
+    },
+}
+
+
+def _normalize_state(country: str, state: str) -> str:
+    """Convert state abbreviation to full name if a mapping exists."""
+    mapping = _STATE_ABBREV_TO_NAME.get(country, {})
+    return mapping.get(state.strip(), state.strip())
+
+
 def get_emails_by_country_and_state() -> dict:
     """Get email counts grouped by country, then by state/region within each country.
 
@@ -208,17 +238,19 @@ def get_emails_by_country_and_state() -> dict:
         except Exception as e:
             logger.error(f"Failed to fetch country/state data: {e}")
 
-    # Build nested counts from RPC result
+    # Build nested counts from RPC result, normalizing abbreviations
     country_state_counts: dict[str, dict[str, int]] = {}
     country_totals: dict[str, int] = {}
     for row in rows:
         c = row.get("country") or "US"
-        s = row.get("state") or "Unknown"
+        raw_state = row.get("state") or ""
         cnt = row.get("cnt", 0)
+        s = _normalize_state(c, raw_state) if raw_state else "Unknown"
         if c not in country_state_counts:
             country_state_counts[c] = {}
             country_totals[c] = 0
-        country_state_counts[c][s] = cnt
+        # Merge counts for states that normalize to the same name
+        country_state_counts[c][s] = country_state_counts[c].get(s, 0) + cnt
         country_totals[c] += cnt
 
     # Build result showing ALL regions from config for each country
