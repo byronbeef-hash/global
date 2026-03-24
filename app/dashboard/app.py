@@ -11,8 +11,12 @@ from fastapi import FastAPI, Request, Query
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.config import TOP_CATTLE_STATES, US_STATES, CSV_FIELDS
+from app.config import TOP_CATTLE_STATES, US_STATES, CSV_FIELDS, FB_AUDIENCE_FIELDS
 from app.dashboard.auth import APIKeyMiddleware
+from app.classifier import (
+    classify_contacts, contact_to_fb_row, validate_country,
+    CATEGORIES, CATEGORY_LABELS, CATEGORY_COLORS,
+)
 from app.db import queries as db
 from app.worker.job_manager import JobManager
 
@@ -327,6 +331,176 @@ async def stats_page():
     )
 
 
+# ── Audiences ─────────────────────────────────────────────────────────
+
+_audiences_cache: dict[str, tuple[float, dict]] = {}
+_AUDIENCES_TTL = 30
+
+
+def _get_classified(country: str) -> dict[str, list[dict]]:
+    """Fetch and classify contacts for a country (cached 30s)."""
+    import time as _time
+    cache_key = f"audiences_{country}"
+    cached = _audiences_cache.get(cache_key)
+    if cached:
+        ts, data = cached
+        if _time.time() - ts < _AUDIENCES_TTL:
+            return data
+
+    contacts = db.get_contacts_by_country_paginated(country, max_rows=50000)
+    buckets = classify_contacts(contacts)
+    _audiences_cache[cache_key] = (_time.time(), buckets)
+    return buckets
+
+
+@app.get("/audiences", response_class=HTMLResponse)
+async def audiences_page(
+    country: str = Query(default="US"),
+    category: str = Query(default=""),
+):
+    """Audience segmentation page for Facebook LAL exports."""
+    from app.config import COUNTRY_CONFIG
+
+    buckets = _get_classified(country)
+
+    total = sum(len(v) for v in buckets.values())
+    flags = {"US": "🇺🇸", "NZ": "🇳🇿", "UK": "🇬🇧", "CA": "🇨🇦", "AU": "🇦🇺"}
+
+    # Country dropdown options
+    country_options = ""
+    for code in ("US", "AU", "NZ", "UK", "CA"):
+        cname = COUNTRY_CONFIG.get(code, {}).get("name", code)
+        sel = "selected" if code == country else ""
+        country_options += f'<option value="{code}" {sel}>{flags.get(code, "")} {cname}</option>'
+
+    # Category cards
+    cards_html = ""
+    for cat in CATEGORIES:
+        count = len(buckets.get(cat, []))
+        pct = f"{count / total * 100:.1f}" if total else "0"
+        label = CATEGORY_LABELS[cat]
+        color = CATEGORY_COLORS[cat]
+        active = "active" if cat == category else ""
+        cards_html += (
+            f'<div class="cat-card {active}" onclick="filterCategory(\'{cat}\')" '
+            f'style="border-color: {color};">'
+            f'<div class="cat-label">{label}</div>'
+            f'<div class="cat-count" style="color: {color};">{count:,}</div>'
+            f'<div class="cat-pct">{pct}%</div>'
+            f'</div>'
+        )
+
+    # Contact table (show selected category or all, capped at 500)
+    display_contacts = []
+    if category and category in buckets:
+        display_contacts = buckets[category][:500]
+    else:
+        # Show first 500 across all categories
+        for cat in CATEGORIES:
+            display_contacts.extend(buckets.get(cat, []))
+            if len(display_contacts) >= 500:
+                break
+        display_contacts = display_contacts[:500]
+
+    rows = ""
+    for c in display_contacts:
+        cat_label = CATEGORY_LABELS.get(c.get("_category", "rancher"), "Rancher")
+        cat_color = CATEGORY_COLORS.get(c.get("_category", "rancher"), "#1abc9c")
+        rows += (
+            f"<tr>"
+            f"<td>{c.get('email', '')}</td>"
+            f"<td>{c.get('farm_name', '')}</td>"
+            f"<td>{c.get('owner_name', '')}</td>"
+            f"<td>{c.get('state', '')}</td>"
+            f"<td><span style='color:{cat_color};'>{cat_label}</span></td>"
+            f"<td>{c.get('source_url', '')[:50]}</td>"
+            f"</tr>"
+        )
+
+    if not rows:
+        rows = "<tr><td colspan='6'>No contacts found</td></tr>"
+
+    # Export buttons
+    export_buttons = ""
+    for cat in CATEGORIES:
+        count = len(buckets.get(cat, []))
+        label = CATEGORY_LABELS[cat]
+        export_buttons += (
+            f'<div class="export-row">'
+            f'<span class="export-label">{label} ({count:,})</span>'
+            f'<button class="btn" onclick="exportAudience(\'{cat}\', \'facebook\')">Facebook CSV</button>'
+            f'<button class="btn btn-outline" onclick="exportAudience(\'{cat}\', \'csv\')">Full CSV</button>'
+            f'</div>'
+        )
+
+    return render_template(
+        "audiences.html",
+        country_options=country_options,
+        category_cards=cards_html,
+        contact_rows=rows,
+        export_buttons=export_buttons,
+        active_country=country,
+        active_category=category,
+        total_count=f"{total:,}",
+        display_count=f"{len(display_contacts):,}",
+    )
+
+
+@app.get("/audiences/export")
+async def audiences_export(
+    country: str = Query(default="US"),
+    category: str = Query(default="rancher"),
+    format: str = Query(default="facebook"),
+):
+    """Export audience segment as CSV (Facebook format or full)."""
+    buckets = _get_classified(country)
+    contacts = buckets.get(category, [])
+
+    date_str = datetime.now().strftime("%Y%m%d")
+    filename = f"{category}_{country}_{date_str}.csv"
+
+    if format == "facebook":
+        fields = FB_AUDIENCE_FIELDS
+
+        def generate():
+            output = io.StringIO()
+            writer = csv.DictWriter(output, fieldnames=fields)
+            writer.writeheader()
+            yield output.getvalue()
+            output.seek(0)
+            output.truncate(0)
+
+            for c in contacts:
+                writer.writerow(contact_to_fb_row(c))
+                yield output.getvalue()
+                output.seek(0)
+                output.truncate(0)
+    else:
+        fields = CSV_FIELDS
+
+        def generate():
+            output = io.StringIO()
+            writer = csv.DictWriter(output, fieldnames=fields, extrasaction="ignore")
+            writer.writeheader()
+            yield output.getvalue()
+            output.seek(0)
+            output.truncate(0)
+
+            for c in contacts:
+                # Validate country on export
+                c["country"] = validate_country(c)
+                writer.writerow(c)
+                yield output.getvalue()
+                output.seek(0)
+                output.truncate(0)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
 # ── API Endpoints ─────────────────────────────────────────────────────
 
 @app.get("/api/stats")
@@ -364,3 +538,18 @@ async def api_recent(
 async def api_performance():
     """JSON performance metrics: collection rates and timing."""
     return db.get_performance_metrics()
+
+
+@app.get("/api/audiences")
+async def api_audiences(
+    country: str = Query(default="US"),
+):
+    """JSON audience category counts for a country."""
+    buckets = _get_classified(country)
+    return {
+        cat: {
+            "count": len(buckets.get(cat, [])),
+            "label": CATEGORY_LABELS[cat],
+        }
+        for cat in CATEGORIES
+    }

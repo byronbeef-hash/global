@@ -147,6 +147,38 @@ def get_all_contacts(limit: int = 100000) -> list[dict]:
     return all_data
 
 
+def get_contacts_by_country_paginated(country: str, max_rows: int = 50000) -> list[dict]:
+    """Get all contacts for a country with pagination.
+
+    The basic get_contacts_by_country() caps at 10k and Supabase returns
+    max 1000 per request. This paginates to fetch up to max_rows.
+    """
+    client = get_client()
+    all_data = []
+    offset = 0
+    page_size = 1000
+
+    while offset < max_rows:
+        fetch_size = min(page_size, max_rows - offset)
+        result = (
+            client.table("contacts")
+            .select("*")
+            .eq("country", country)
+            .order("created_at", desc=True)
+            .range(offset, offset + fetch_size - 1)
+            .execute()
+        )
+        batch = result.data or []
+        if not batch:
+            break
+        all_data.extend(batch)
+        offset += len(batch)
+        if len(batch) < fetch_size:
+            break
+
+    return all_data
+
+
 def get_emails_per_country() -> list[dict]:
     """Get email count grouped by country."""
     client = get_client()

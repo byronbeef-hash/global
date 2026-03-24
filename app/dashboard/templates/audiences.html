@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audiences — Cattle Scraper</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f0f23; color: #e0e0e0; line-height: 1.6; }
+        nav { background: #1a1a2e; border-bottom: 1px solid #333; padding: 0 2rem; display: flex; align-items: center; }
+        nav .brand { font-weight: 700; font-size: 1.1rem; color: #e94560; padding: 1rem 1.5rem 1rem 0; border-right: 1px solid #333; margin-right: .5rem; text-decoration: none; }
+        nav a { color: #aaa; text-decoration: none; padding: 1rem; font-size: .9rem; }
+        nav a:hover, nav a.active { color: #e94560; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+        h1 { font-size: 1.6rem; margin-bottom: .5rem; color: #fff; }
+        .subtitle { color: #888; font-size: .9rem; margin-bottom: 1.5rem; }
+
+        /* Country selector */
+        .country-bar { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
+        .country-bar label { color: #888; font-size: .85rem; }
+        .country-bar select { padding: .5rem 1rem; background: #0f3460; border: 1px solid #333; border-radius: 6px; color: #eee; font-size: .95rem; }
+
+        /* Category cards */
+        .cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1rem; margin-bottom: 2rem; }
+        .cat-card { background: #16213e; border-radius: 10px; padding: 1.2rem; border: 2px solid #1f3460; cursor: pointer; text-align: center; transition: all .2s; }
+        .cat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.3); }
+        .cat-card.active { border-width: 2px; background: #1a2a4e; }
+        .cat-label { font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; color: #888; margin-bottom: .3rem; }
+        .cat-count { font-size: 1.8rem; font-weight: 700; }
+        .cat-pct { font-size: .8rem; color: #666; }
+
+        /* Table */
+        .table-wrap { background: #16213e; border-radius: 10px; border: 1px solid #1f3460; overflow-x: auto; margin-bottom: 2rem; }
+        .table-header { padding: 1rem 1.5rem; border-bottom: 1px solid #1f3460; display: flex; justify-content: space-between; align-items: center; }
+        .table-header h2 { font-size: 1rem; color: #ccc; }
+        .table-header .count { color: #888; font-size: .85rem; }
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: .8rem 1rem; border-bottom: 1px solid #1f3460; color: #888; font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; cursor: pointer; user-select: none; }
+        th:hover { color: #e94560; }
+        th.sorted-asc::after { content: ' ▲'; }
+        th.sorted-desc::after { content: ' ▼'; }
+        td { padding: .6rem 1rem; border-bottom: 1px solid #0f0f23; font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+        tr:hover { background: #1a2a4e; }
+
+        /* Export section */
+        .export-section { background: #16213e; border-radius: 10px; padding: 1.5rem; border: 1px solid #1f3460; }
+        .export-section h2 { font-size: 1.1rem; margin-bottom: 1rem; color: #ccc; }
+        .export-row { display: flex; align-items: center; gap: .8rem; padding: .6rem 0; border-bottom: 1px solid #0f0f23; }
+        .export-row:last-child { border-bottom: none; }
+        .export-label { flex: 1; font-size: .9rem; }
+        .btn { display: inline-block; padding: .5rem 1rem; background: #e94560; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: .85rem; text-decoration: none; }
+        .btn:hover { background: #c73a52; }
+        .btn-outline { background: transparent; border: 1px solid #5dade2; color: #5dade2; }
+        .btn-outline:hover { background: #5dade2; color: #0f0f23; }
+
+        @media (max-width: 900px) {
+            .cards { grid-template-columns: repeat(3, 1fr); }
+        }
+        @media (max-width: 600px) {
+            .cards { grid-template-columns: repeat(2, 1fr); }
+            .export-row { flex-wrap: wrap; }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="/" class="brand">Cattle Scraper</a>
+        <a href="/">Dashboard</a>
+        <a href="/recent">Recent</a>
+        <a href="/export">Export</a>
+        <a href="/audiences" class="active">Audiences</a>
+        <a href="/jobs">Jobs</a>
+        <a href="/stats">Stats</a>
+    </nav>
+
+    <div class="container">
+        <h1>Audience Segments</h1>
+        <p class="subtitle">Categorise contacts for Facebook Lookalike Audience uploads. Filter by country and segment, then export.</p>
+
+        <div class="country-bar">
+            <label for="country">Country:</label>
+            <select id="country" onchange="changeCountry()">
+                {{country_options}}
+            </select>
+            <span style="color:#666; font-size:.85rem;">{{total_count}} total contacts</span>
+        </div>
+
+        <div class="cards">
+            {{category_cards}}
+        </div>
+
+        <div class="table-wrap">
+            <div class="table-header">
+                <h2>Contacts</h2>
+                <span class="count">Showing {{display_count}} of {{total_count}}</span>
+            </div>
+            <table id="contacts-table">
+                <thead>
+                    <tr>
+                        <th onclick="sortTable(0)">Email</th>
+                        <th onclick="sortTable(1)">Farm Name</th>
+                        <th onclick="sortTable(2)">Owner</th>
+                        <th onclick="sortTable(3)">State</th>
+                        <th onclick="sortTable(4)">Category</th>
+                        <th onclick="sortTable(5)">Source</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{contact_rows}}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="export-section">
+            <h2>Export by Segment</h2>
+            <p style="color:#888; font-size:.85rem; margin-bottom:1rem;">Facebook CSV uses their custom audience format (email, phone, fn, ln, ct, st, zip, country). Full CSV includes all fields.</p>
+            {{export_buttons}}
+        </div>
+    </div>
+
+    <script>
+        function getKey() {
+            const cookies = document.cookie.split(';');
+            for (const c of cookies) {
+                const [k, v] = c.trim().split('=');
+                if (k === 'api_key') return v;
+            }
+            return '';
+        }
+
+        function changeCountry() {
+            const country = document.getElementById('country').value;
+            window.location.href = '/audiences?country=' + country;
+        }
+
+        function filterCategory(cat) {
+            const country = document.getElementById('country').value;
+            const current = '{{active_category}}';
+            if (cat === current) {
+                // Click again to clear filter
+                window.location.href = '/audiences?country=' + country;
+            } else {
+                window.location.href = '/audiences?country=' + country + '&category=' + cat;
+            }
+        }
+
+        function exportAudience(category, format) {
+            const country = document.getElementById('country').value;
+            const params = new URLSearchParams({
+                country: country,
+                category: category,
+                format: format,
+                key: getKey(),
+            });
+            window.location.href = '/audiences/export?' + params.toString();
+        }
+
+        // Client-side column sorting
+        let sortCol = -1;
+        let sortAsc = true;
+
+        function sortTable(col) {
+            const table = document.getElementById('contacts-table');
+            const tbody = table.querySelector('tbody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            const ths = table.querySelectorAll('th');
+
+            if (sortCol === col) {
+                sortAsc = !sortAsc;
+            } else {
+                sortCol = col;
+                sortAsc = true;
+            }
+
+            // Update header indicators
+            ths.forEach((th, i) => {
+                th.classList.remove('sorted-asc', 'sorted-desc');
+                if (i === col) th.classList.add(sortAsc ? 'sorted-asc' : 'sorted-desc');
+            });
+
+            rows.sort((a, b) => {
+                const aVal = (a.cells[col]?.textContent || '').toLowerCase();
+                const bVal = (b.cells[col]?.textContent || '').toLowerCase();
+                return sortAsc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+            });
+
+            rows.forEach(row => tbody.appendChild(row));
+        }
+    </script>
+</body>
+</html>

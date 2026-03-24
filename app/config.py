@@ -350,6 +350,9 @@ CSV_FIELDS = [
     "source_url", "scraped_date",
 ]
 
+# Facebook Custom Audience CSV fields
+FB_AUDIENCE_FIELDS = ["email", "phone", "fn", "ln", "ct", "st", "zip", "country"]
+
 # === Logging ===
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
 
