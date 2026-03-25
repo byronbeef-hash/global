@@ -338,7 +338,7 @@ _AUDIENCES_TTL = 30
 
 
 def _get_classified(country: str) -> dict[str, list[dict]]:
-    """Fetch and classify contacts for a country (cached 30s)."""
+    """Fetch and classify contacts for a country or all countries (cached 30s)."""
     import time as _time
     cache_key = f"audiences_{country}"
     cached = _audiences_cache.get(cache_key)
@@ -347,7 +347,10 @@ def _get_classified(country: str) -> dict[str, list[dict]]:
         if _time.time() - ts < _AUDIENCES_TTL:
             return data
 
-    contacts = db.get_contacts_by_country_paginated(country, max_rows=50000)
+    if country == "ALL":
+        contacts = db.get_all_contacts(limit=100000)
+    else:
+        contacts = db.get_contacts_by_country_paginated(country, max_rows=50000)
     buckets = classify_contacts(contacts)
     _audiences_cache[cache_key] = (_time.time(), buckets)
     return buckets
@@ -368,6 +371,8 @@ async def audiences_page(
 
     # Country dropdown options
     country_options = ""
+    all_sel = "selected" if country == "ALL" else ""
+    country_options += f'<option value="ALL" {all_sel}>🌍 All Countries</option>'
     for code in ("US", "AU", "NZ", "UK", "CA"):
         cname = COUNTRY_CONFIG.get(code, {}).get("name", code)
         sel = "selected" if code == country else ""
@@ -402,23 +407,27 @@ async def audiences_page(
                 break
         display_contacts = display_contacts[:500]
 
+    show_country_col = country == "ALL"
     rows = ""
     for c in display_contacts:
         cat_label = CATEGORY_LABELS.get(c.get("_category", "rancher"), "Rancher")
         cat_color = CATEGORY_COLORS.get(c.get("_category", "rancher"), "#1abc9c")
+        country_cell = f"<td>{c.get('country', '')}</td>" if show_country_col else ""
         rows += (
             f"<tr>"
             f"<td>{c.get('email', '')}</td>"
             f"<td>{c.get('farm_name', '')}</td>"
             f"<td>{c.get('owner_name', '')}</td>"
+            f"{country_cell}"
             f"<td>{c.get('state', '')}</td>"
             f"<td><span style='color:{cat_color};'>{cat_label}</span></td>"
             f"<td>{c.get('source_url', '')[:50]}</td>"
             f"</tr>"
         )
 
+    colspan = "7" if show_country_col else "6"
     if not rows:
-        rows = "<tr><td colspan='6'>No contacts found</td></tr>"
+        rows = f"<tr><td colspan='{colspan}'>No contacts found</td></tr>"
 
     # Export buttons
     export_buttons = ""
@@ -433,6 +442,27 @@ async def audiences_page(
             f'</div>'
         )
 
+    # Table header (add Country column when showing ALL)
+    if show_country_col:
+        table_header = (
+            '<tr><th onclick="sortTable(0)">Email</th>'
+            '<th onclick="sortTable(1)">Farm Name</th>'
+            '<th onclick="sortTable(2)">Owner</th>'
+            '<th onclick="sortTable(3)">Country</th>'
+            '<th onclick="sortTable(4)">State</th>'
+            '<th onclick="sortTable(5)">Category</th>'
+            '<th onclick="sortTable(6)">Source</th></tr>'
+        )
+    else:
+        table_header = (
+            '<tr><th onclick="sortTable(0)">Email</th>'
+            '<th onclick="sortTable(1)">Farm Name</th>'
+            '<th onclick="sortTable(2)">Owner</th>'
+            '<th onclick="sortTable(3)">State</th>'
+            '<th onclick="sortTable(4)">Category</th>'
+            '<th onclick="sortTable(5)">Source</th></tr>'
+        )
+
     return render_template(
         "audiences.html",
         country_options=country_options,
@@ -443,6 +473,7 @@ async def audiences_page(
         active_category=category,
         total_count=f"{total:,}",
         display_count=f"{len(display_contacts):,}",
+        table_header=table_header,
     )
 
 

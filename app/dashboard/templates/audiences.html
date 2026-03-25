@@ -96,14 +96,7 @@
             </div>
             <table id="contacts-table">
                 <thead>
-                    <tr>
-                        <th onclick="sortTable(0)">Email</th>
-                        <th onclick="sortTable(1)">Farm Name</th>
-                        <th onclick="sortTable(2)">Owner</th>
-                        <th onclick="sortTable(3)">State</th>
-                        <th onclick="sortTable(4)">Category</th>
-                        <th onclick="sortTable(5)">Source</th>
-                    </tr>
+                    {{table_header}}
                 </thead>
                 <tbody>
                     {{contact_rows}}
